@@ -37,6 +37,8 @@ class Trade:
     exit_price: Optional[float] = None
     pnl_pct: Optional[float] = None
     exit_reason: str = "open"
+    # List of (date_str, close_price) for sparkline rendering
+    price_path: List = field(default_factory=list)
 
 
 @dataclass
@@ -118,6 +120,25 @@ def _get_close(df: pd.DataFrame, ticker: str, date: pd.Timestamp) -> Optional[fl
     if rows.empty:
         return None
     return float(rows["Close"].iloc[0])
+
+
+def _price_path(
+    df: pd.DataFrame,
+    ticker: str,
+    entry_date: pd.Timestamp,
+    exit_date: pd.Timestamp,
+) -> List:
+    """
+    Extract daily closing prices for `ticker` from `entry_date` to `exit_date`
+    (inclusive). Returns a list of [date_str, close] pairs for sparkline rendering.
+    """
+    mask = (
+        (df["Ticker"] == ticker)
+        & (df["Date"] >= entry_date)
+        & (df["Date"] <= exit_date)
+    )
+    rows = df.loc[mask].sort_values("Date")
+    return [[str(d.date()), float(c)] for d, c in zip(rows["Date"], rows["Close"])]
 
 
 # ── Main backtest loop ─────────────────────────────────────────────────────
@@ -220,6 +241,7 @@ def run_backtest(
                             exit_price=cur_price,
                             pnl_pct=round(pnl_pct, 2),
                             exit_reason=reason,
+                            price_path=_price_path(df, st.position_ticker, st.entry_date, day),  # type: ignore[arg-type]
                         )
                         st.trades.append(trade)
                         st.cash += proceeds                    # add back to reserve
@@ -271,6 +293,7 @@ def run_backtest(
                 exit_price=cur_price,
                 pnl_pct=round(pnl_pct, 2),
                 exit_reason="end_of_period",
+                price_path=_price_path(df, st.position_ticker, st.entry_date, last_day),  # type: ignore[arg-type]
             )
             st.trades.append(trade)
             st.cash += proceeds

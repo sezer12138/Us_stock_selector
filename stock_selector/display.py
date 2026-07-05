@@ -338,6 +338,14 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
 
             icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪️"}.get(t.exit_reason, "")
             cap_str = f"${cap:,.0f}" if cap else "—"
+
+            # Sparkline chart
+            price_path = getattr(t, 'price_path', [])
+            sparkline = _sparkline_svg(
+                price_path, t.entry_price, t.exit_price or t.entry_price,
+                config['take_profit_pct'], config['stop_loss_pct'],
+            )
+
             trows += f"""<tr>
                 <td class="rank">{i}</td><td class="ticker">{t.ticker}</td>
                 <td>{entry_d}</td><td>${t.entry_price:,.2f}</td>
@@ -346,11 +354,12 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
                 <td class="{pnl_cls}">{t.pnl_pct:+.2f}%</td>
                 <td class="{pnl_cls}">{pnl_d_str}</td>
                 <td>{cap_str}</td>
+                <td class="chart-cell">{sparkline}</td>
                 <td>{icon} {t.exit_reason}</td>
             </tr>"""
         trade_sections += f"""<div class="window-section">
             <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · all prices are daily closing prices</span></h2>
-            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Reason</th></tr></thead>
+            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Chart<br><span style="font-weight:400;font-size:0.7rem;color:var(--muted)">price path</span></th><th>Reason</th></tr></thead>
             <tbody>{trows}</tbody></table></div>"""
 
     pos_pct_html = config.get("position_size_pct", 100)
@@ -370,7 +379,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
           --green:#3fb950; --red:#f85149; --accent:#58a6ff; --border:#30363d; }}
   * {{ box-sizing:border-box;margin:0;padding:0; }}
   body {{ background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-          padding:24px 16px;max-width:1200px;margin:0 auto; }}
+          padding:24px 16px;max-width:1400px;margin:0 auto; }}
   h1 {{ font-size:1.6rem;margin-bottom:4px; }}
   .muted {{ color:var(--muted);font-size:0.9rem;margin-bottom:20px; }}
   .summary-cards {{ display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px; }}
@@ -387,6 +396,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
   .pos {{ color:var(--green); }} .neg {{ color:var(--red); }}
   .ticker {{ font-weight:700;color:var(--accent); }}
   .rank {{ color:var(--muted);width:24px;text-align:right;padding-right:8px!important; }}
+  .chart-cell {{ padding:2px 4px!important;width:180px; }}
   footer {{ text-align:center;color:var(--muted);font-size:0.8rem;margin-top:32px; }}
 </style></head><body>
 <h1>📊 Backtest Report</h1>
@@ -403,6 +413,73 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
     with open(filepath, "w") as f:
         f.write(html)
     return filepath
+
+
+# ── Sparkline SVG generator ─────────────────────────────────────────────
+
+def _sparkline_svg(price_path: list, entry_price: float, exit_price: float,
+                   take_profit_pct: float, stop_loss_pct: float,
+                   width: int = 180, height: int = 34) -> str:
+    """
+    Generate an inline SVG sparkline showing the price path of a trade.
+
+    Includes: daily close line, entry/exit markers, entry-price baseline,
+              take-profit level (dashed green), stop-loss level (dashed red).
+    """
+    if not price_path or len(price_path) < 2:
+        return '<span class="muted" style="font-size:0.75rem">—</span>'
+
+    prices = [p[1] for p in price_path]
+    p_min = min(prices)
+    p_max = max(prices)
+
+    # Expand range to include TP/SL reference lines
+    tp_level = entry_price * (1 + take_profit_pct / 100.0)
+    sl_level = entry_price * (1 - stop_loss_pct / 100.0)
+    p_min = min(p_min, sl_level * 0.98)
+    p_max = max(p_max, tp_level * 1.02)
+
+    price_range = p_max - p_min or 1.0
+
+    # Margins inside the SVG
+    ml, mr, mt, mb = 6, 6, 5, 6
+    pw = width - ml - mr
+    ph = height - mt - mb
+
+    def x(i: int) -> float:
+        return ml + (i / (len(prices) - 1)) * pw
+
+    def y(p: float) -> float:
+        return mt + (1.0 - (p - p_min) / price_range) * ph
+
+    # Price line points
+    points = " ".join(f"{x(i):.1f},{y(p):.1f}" for i, p in enumerate(prices))
+
+    # Entry / Exit markers
+    entry_y = y(entry_price)
+    exit_y = y(exit_price)
+    exit_color = "#3fb950" if exit_price >= entry_price else "#f85149"
+
+    # Reference line Y positions
+    tp_y = y(tp_level)
+    sl_y = y(sl_level)
+    entry_line_y = y(entry_price)
+
+    # Only show TP/SL lines if they're within the visible range
+    tp_visible = tp_level <= p_max * 1.01
+    sl_visible = sl_level >= p_min * 0.99
+
+    tp_line = f'<line x1="{ml:.0f}" y1="{tp_y:.1f}" x2="{ml+pw:.0f}" y2="{tp_y:.1f}" stroke="#3fb950" stroke-dasharray="2,2" stroke-width="0.6" opacity="0.5"/>' if tp_visible else ""
+    sl_line = f'<line x1="{ml:.0f}" y1="{sl_y:.1f}" x2="{ml+pw:.0f}" y2="{sl_y:.1f}" stroke="#f85149" stroke-dasharray="2,2" stroke-width="0.6" opacity="0.5"/>' if sl_visible else ""
+
+    return f'''<svg width="{width}" height="{height}" style="vertical-align:middle;display:block">
+  <line x1="{ml:.0f}" y1="{entry_line_y:.1f}" x2="{ml+pw:.0f}" y2="{entry_line_y:.1f}" stroke="#8b949e" stroke-dasharray="1,3" stroke-width="0.5" opacity="0.4"/>
+  {tp_line}
+  {sl_line}
+  <polyline points="{points}" fill="none" stroke="#58a6ff" stroke-width="1.2" stroke-linejoin="round"/>
+  <circle cx="{x(0):.1f}" cy="{entry_y:.1f}" r="2.2" fill="#58a6ff" stroke="#1a1d2e" stroke-width="0.8"/>
+  <circle cx="{x(len(prices)-1):.1f}" cy="{exit_y:.1f}" r="2.2" fill="{exit_color}" stroke="#1a1d2e" stroke-width="0.8"/>
+</svg>'''
 
 
 def _html_table(ranks: list[StockRank], metric_label: str) -> str:

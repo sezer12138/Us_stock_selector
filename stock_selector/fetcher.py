@@ -54,13 +54,19 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
             col_map[c] = "Date"
         elif cl == "ticker" or cl.startswith("ticker"):
             col_map[c] = "Ticker"
+        elif cl == "open":
+            col_map[c] = "Open"
+        elif cl == "high":
+            col_map[c] = "High"
+        elif cl == "low":
+            col_map[c] = "Low"
         elif cl == "close":
             col_map[c] = "Close"
         elif cl == "volume":
             col_map[c] = "Volume"
     df = df.rename(columns=col_map)
 
-    keep = ["Date", "Ticker", "Close", "Volume"]
+    keep = ["Date", "Ticker", "Open", "High", "Low", "Close", "Volume"]
     return df[[c for c in keep if c in df.columns]]
 
 

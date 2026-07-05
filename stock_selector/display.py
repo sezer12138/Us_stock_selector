@@ -339,9 +339,9 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
             icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪️"}.get(t.exit_reason, "")
             cap_str = f"${cap:,.0f}" if cap else "—"
 
-            # Sparkline chart
+            # K-line candlestick chart
             price_path = getattr(t, 'price_path', [])
-            sparkline = _sparkline_svg(
+            kline = _kline_svg(
                 price_path, t.entry_price, t.exit_price or t.entry_price,
                 config['take_profit_pct'], config['stop_loss_pct'],
             )
@@ -354,12 +354,12 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
                 <td class="{pnl_cls}">{t.pnl_pct:+.2f}%</td>
                 <td class="{pnl_cls}">{pnl_d_str}</td>
                 <td>{cap_str}</td>
-                <td class="chart-cell">{sparkline}</td>
+                <td class="chart-cell">{kline}</td>
                 <td>{icon} {t.exit_reason}</td>
             </tr>"""
         trade_sections += f"""<div class="window-section">
-            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · all prices are daily closing prices</span></h2>
-            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Chart<br><span style="font-weight:400;font-size:0.7rem;color:var(--muted)">price path</span></th><th>Reason</th></tr></thead>
+            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · daily candlestick charts (K-line)</span></h2>
+            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Daily K-line Chart</th><th>Reason</th></tr></thead>
             <tbody>{trows}</tbody></table></div>"""
 
     pos_pct_html = config.get("position_size_pct", 100)
@@ -379,7 +379,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
           --green:#3fb950; --red:#f85149; --accent:#58a6ff; --border:#30363d; }}
   * {{ box-sizing:border-box;margin:0;padding:0; }}
   body {{ background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-          padding:24px 16px;max-width:1400px;margin:0 auto; }}
+          padding:24px 16px;max-width:1700px;margin:0 auto; }}
   h1 {{ font-size:1.6rem;margin-bottom:4px; }}
   .muted {{ color:var(--muted);font-size:0.9rem;margin-bottom:20px; }}
   .summary-cards {{ display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px; }}
@@ -396,7 +396,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
   .pos {{ color:var(--green); }} .neg {{ color:var(--red); }}
   .ticker {{ font-weight:700;color:var(--accent); }}
   .rank {{ color:var(--muted);width:24px;text-align:right;padding-right:8px!important; }}
-  .chart-cell {{ padding:2px 4px!important;width:180px; }}
+  .chart-cell {{ padding:4px 6px!important;width:420px; }}
   footer {{ text-align:center;color:var(--muted);font-size:0.8rem;margin-top:32px; }}
 </style></head><body>
 <h1>📊 Backtest Report</h1>
@@ -415,70 +415,118 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
     return filepath
 
 
-# ── Sparkline SVG generator ─────────────────────────────────────────────
+# ── K-line (Candlestick) Chart SVG generator ────────────────────────────
 
-def _sparkline_svg(price_path: list, entry_price: float, exit_price: float,
-                   take_profit_pct: float, stop_loss_pct: float,
-                   width: int = 180, height: int = 34) -> str:
+def _kline_svg(price_path: list, entry_price: float, exit_price: float,
+               take_profit_pct: float, stop_loss_pct: float,
+               width: int = 420, height: int = 130) -> str:
     """
-    Generate an inline SVG sparkline showing the price path of a trade.
+    Generate an inline SVG daily candlestick (K-line) chart for a trade.
 
-    Includes: daily close line, entry/exit markers, entry-price baseline,
-              take-profit level (dashed green), stop-loss level (dashed red).
+    Each candle shows Open/High/Low/Close for one day:
+      - Wick: vertical line from Low to High
+      - Body: filled rect from Open to Close (green = up, red = down)
+
+    Also renders entry-price baseline, take-profit / stop-loss levels,
+    entry/exit markers, and a few date labels.
     """
-    if not price_path or len(price_path) < 2:
+    if not price_path or len(price_path) < 1:
         return '<span class="muted" style="font-size:0.75rem">—</span>'
 
-    prices = [p[1] for p in price_path]
-    p_min = min(prices)
-    p_max = max(prices)
+    # price_path entries: [date_str, open, high, low, close]
+    n = len(price_path)
+    closes = [p[4] for p in price_path]
+    highs  = [p[2] for p in price_path]
+    lows   = [p[3] for p in price_path]
 
-    # Expand range to include TP/SL reference lines
+    p_min = min(lows)
+    p_max = max(highs)
+
     tp_level = entry_price * (1 + take_profit_pct / 100.0)
     sl_level = entry_price * (1 - stop_loss_pct / 100.0)
-    p_min = min(p_min, sl_level * 0.98)
-    p_max = max(p_max, tp_level * 1.02)
-
+    p_min = min(p_min, sl_level * 0.97)
+    p_max = max(p_max, tp_level * 1.03)
     price_range = p_max - p_min or 1.0
 
-    # Margins inside the SVG
-    ml, mr, mt, mb = 6, 6, 5, 6
-    pw = width - ml - mr
-    ph = height - mt - mb
-
-    def x(i: int) -> float:
-        return ml + (i / (len(prices) - 1)) * pw
+    # Layout
+    ml, mr, mt, mb = 12, 58, 10, 20
+    cw = width - ml - mr           # chart area width
+    ch = height - mt - mb           # chart area height
 
     def y(p: float) -> float:
-        return mt + (1.0 - (p - p_min) / price_range) * ph
+        return mt + (1.0 - (p - p_min) / price_range) * ch
 
-    # Price line points
-    points = " ".join(f"{x(i):.1f},{y(p):.1f}" for i, p in enumerate(prices))
+    spacing = cw / max(n, 1)
+    body_w = max(2.0, min(8.0, spacing * 0.65))
 
-    # Entry / Exit markers
-    entry_y = y(entry_price)
-    exit_y = y(exit_price)
+    # ── Build candle elements ──────────────────────────────────────────
+    candles = ""
+    for i, bar in enumerate(price_path):
+        _, o, h, l, c = bar
+        cx = ml + i * spacing + spacing / 2
+        oy = y(o)
+        cy_ = y(c)     # cy_ to avoid shadowing outer c variable
+        hy = y(h)
+        ly = y(l)
+
+        up = c >= o
+        body_top = min(oy, cy_)
+        body_h = abs(cy_ - oy) or 0.8
+        fill = "#3fb950" if up else "#f85149"
+        stroke = "#2d8a3e" if up else "#c43a33"
+
+        # Wick
+        candles += f'<line x1="{cx:.1f}" y1="{hy:.1f}" x2="{cx:.1f}" y2="{ly:.1f}" stroke="{stroke}" stroke-width="0.8"/>'
+        # Body
+        candles += f'<rect x="{cx - body_w/2:.1f}" y="{body_top:.1f}" width="{body_w:.1f}" height="{body_h:.1f}" fill="{fill}" stroke="{stroke}" stroke-width="0.5"/>'
+
+    # ── Reference lines ────────────────────────────────────────────────
+    refs = ""
+    for level, color, label in [
+        (tp_level, "#3fb950", f"TP +{take_profit_pct:.0f}%"),
+        (entry_price, "#8b949e", "Entry"),
+        (sl_level, "#f85149", f"SL -{stop_loss_pct:.0f}%"),
+    ]:
+        ly_ = y(level)
+        if p_min <= level <= p_max:
+            refs += f'<line x1="{ml:.0f}" y1="{ly_:.1f}" x2="{ml+cw:.0f}" y2="{ly_:.1f}" stroke="{color}" stroke-dasharray="3,3" stroke-width="0.7" opacity="0.6"/>'
+            refs += f'<text x="{ml+cw+4:.0f}" y="{ly_+4:.1f}" fill="{color}" font-size="9" opacity="0.8">{label}</text>'
+
+    # ── Entry / Exit markers ───────────────────────────────────────────
+    entry_x = ml + spacing / 2
+    exit_x = ml + (n - 1) * spacing + spacing / 2
+    entry_y_mark = y(entry_price)
+    exit_y_mark = y(exit_price)
     exit_color = "#3fb950" if exit_price >= entry_price else "#f85149"
 
-    # Reference line Y positions
-    tp_y = y(tp_level)
-    sl_y = y(sl_level)
-    entry_line_y = y(entry_price)
+    markers = (
+        f'<polygon points="{entry_x:.1f},{entry_y_mark-5:.1f} {entry_x-4:.1f},{entry_y_mark+3:.1f} {entry_x+4:.1f},{entry_y_mark+3:.1f}" fill="#58a6ff" stroke="#1a1d2e" stroke-width="0.6"/>'
+        f'<circle cx="{exit_x:.1f}" cy="{exit_y_mark:.1f}" r="3.5" fill="{exit_color}" stroke="#1a1d2e" stroke-width="0.8"/>'
+    )
 
-    # Only show TP/SL lines if they're within the visible range
-    tp_visible = tp_level <= p_max * 1.01
-    sl_visible = sl_level >= p_min * 0.99
+    # ── Date labels (every ~5 candles) ──────────────────────────────────
+    date_labels = ""
+    step = max(1, n // 6)
+    for i in range(0, n, step):
+        cx = ml + i * spacing + spacing / 2
+        d = price_path[i][0][5:]  # MM-DD from YYYY-MM-DD
+        date_labels += f'<text x="{cx:.1f}" y="{height-4:.0f}" fill="#8b949e" font-size="8" text-anchor="middle">{d}</text>'
 
-    tp_line = f'<line x1="{ml:.0f}" y1="{tp_y:.1f}" x2="{ml+pw:.0f}" y2="{tp_y:.1f}" stroke="#3fb950" stroke-dasharray="2,2" stroke-width="0.6" opacity="0.5"/>' if tp_visible else ""
-    sl_line = f'<line x1="{ml:.0f}" y1="{sl_y:.1f}" x2="{ml+pw:.0f}" y2="{sl_y:.1f}" stroke="#f85149" stroke-dasharray="2,2" stroke-width="0.6" opacity="0.5"/>' if sl_visible else ""
+    # ── Price axis labels (3 levels) ────────────────────────────────────
+    price_labels = ""
+    for i in range(4):
+        frac = i / 3.0
+        price = p_min + frac * price_range
+        py = y(price)
+        price_labels += f'<text x="{width-2:.0f}" y="{py+3:.1f}" fill="#8b949e" font-size="8" text-anchor="end">${price:.2f}</text>'
 
-    return f'''<svg width="{width}" height="{height}" style="vertical-align:middle;display:block">
-  <line x1="{ml:.0f}" y1="{entry_line_y:.1f}" x2="{ml+pw:.0f}" y2="{entry_line_y:.1f}" stroke="#8b949e" stroke-dasharray="1,3" stroke-width="0.5" opacity="0.4"/>
-  {tp_line}
-  {sl_line}
-  <polyline points="{points}" fill="none" stroke="#58a6ff" stroke-width="1.2" stroke-linejoin="round"/>
-  <circle cx="{x(0):.1f}" cy="{entry_y:.1f}" r="2.2" fill="#58a6ff" stroke="#1a1d2e" stroke-width="0.8"/>
-  <circle cx="{x(len(prices)-1):.1f}" cy="{exit_y:.1f}" r="2.2" fill="{exit_color}" stroke="#1a1d2e" stroke-width="0.8"/>
+    return f'''<svg width="{width}" height="{height}" style="display:block;background:rgba(255,255,255,0.01)">
+  <rect x="{ml:.0f}" y="{mt:.0f}" width="{cw:.0f}" height="{ch:.0f}" fill="none" stroke="#30363d" stroke-width="0.5" opacity="0.5"/>
+  {refs}
+  {candles}
+  {markers}
+  {date_labels}
+  {price_labels}
 </svg>'''
 
 

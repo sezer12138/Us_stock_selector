@@ -129,8 +129,8 @@ def _price_path(
     exit_date: pd.Timestamp,
 ) -> List:
     """
-    Extract daily closing prices for `ticker` from `entry_date` to `exit_date`
-    (inclusive). Returns a list of [date_str, close] pairs for sparkline rendering.
+    Extract daily OHLC bars for `ticker` from `entry_date` to `exit_date`
+    (inclusive). Returns a list of [date_str, open, high, low, close] per day.
     """
     mask = (
         (df["Ticker"] == ticker)
@@ -138,7 +138,16 @@ def _price_path(
         & (df["Date"] <= exit_date)
     )
     rows = df.loc[mask].sort_values("Date")
-    return [[str(d.date()), float(c)] for d, c in zip(rows["Date"], rows["Close"])]
+    result = []
+    for _, r in rows.iterrows():
+        result.append([
+            str(r["Date"].date()),
+            float(r["Open"]),
+            float(r["High"]),
+            float(r["Low"]),
+            float(r["Close"]),
+        ])
+    return result
 
 
 # ── Main backtest loop ─────────────────────────────────────────────────────

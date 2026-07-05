@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 from typing import Dict
 
+import pandas as pd
 from tabulate import tabulate
 
 from .screener import WindowResult, StockRank
@@ -189,12 +190,13 @@ def print_backtest_results(bt_results: Dict) -> None:
     print(f"  Win rate        : {summary['win_rate_pct']:.1f}%")
     pos_pct = config.get("position_size_pct", 100)
     min_vol = config.get("min_dollar_volume_m", 0)
-    rules_parts = [f"buy top-1 gainer"]
+    rules_parts = [f"buy top-1 gainer @ close"]
     if min_vol > 0:
         rules_parts.append(f"min vol ≥${min_vol}M/day")
     rules_parts.append(f"{pos_pct:.0f}% capital/trade")
-    rules_parts.append(f"sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}%")
+    rules_parts.append(f"sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}% @ close")
     print(f"  Rules           : {', '.join(rules_parts)}")
+    print(f"  Execution       : all entries & exits at daily CLOSING price")
     print()
 
     # ── Per-strategy summary table ──
@@ -230,16 +232,38 @@ def print_backtest_results(bt_results: Dict) -> None:
         print(f"─" * 78)
         trade_rows = []
         for i, t in enumerate(s["trades"], 1):
-            entry_d = t.entry_date.strftime("%m/%d") if hasattr(t.entry_date, 'strftime') else str(t.entry_date)[:10]
-            exit_d = t.exit_date.strftime("%m/%d") if t.exit_date and hasattr(t.exit_date, 'strftime') else (str(t.exit_date)[:10] if t.exit_date else "—")
+            entry_d = t.entry_date.strftime("%Y-%m-%d") if hasattr(t.entry_date, 'strftime') else str(t.entry_date)[:10]
+            exit_d = t.exit_date.strftime("%Y-%m-%d") if t.exit_date and hasattr(t.exit_date, 'strftime') else "—"
             pnl_str = f"{t.pnl_pct:+.2f}%" if t.pnl_pct is not None else "—"
+            pnl_cls = "pos" if (t.pnl_pct or 0) >= 0 else "neg"
+
+            # Dollar P&L
+            cap = t.capital_used if hasattr(t, 'capital_used') else 0
+            if t.pnl_pct is not None and cap > 0:
+                pnl_dollar = cap * t.pnl_pct / 100.0
+                pnl_d_str = f"${pnl_dollar:+,.2f}"
+            else:
+                pnl_d_str = "—"
+
+            # Holding days
+            if t.entry_date and t.exit_date:
+                try:
+                    hold_days = (pd.Timestamp(t.exit_date) - pd.Timestamp(t.entry_date)).days
+                except Exception:
+                    hold_days = "—"
+            else:
+                hold_days = "—"
+
             icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪"}.get(t.exit_reason, "")
-            cap = f"${t.capital_used:,.0f}" if hasattr(t, 'capital_used') else "—"
-            trade_rows.append([i, t.ticker, entry_d, f"${t.entry_price:,.2f}",
-                              exit_d, f"${t.exit_price:,.2f}" if t.exit_price else "—",
-                              pnl_str, cap, f"{icon} {t.exit_reason}"])
+            cap_str = f"${cap:,.0f}" if cap else "—"
+            trade_rows.append([
+                i, t.ticker, entry_d, f"${t.entry_price:,.2f}",
+                exit_d, f"${t.exit_price:,.2f}" if t.exit_price else "—",
+                hold_days, pnl_str, pnl_d_str, cap_str, f"{icon} {t.exit_reason}",
+            ])
         print(tabulate(trade_rows,
-                       headers=["#", "Ticker", "Entry", "Price", "Exit", "Price", "P&L", "Capital", "Reason"],
+                       headers=["#", "Ticker", "Buy Date", "Buy Close", "Sell Date", "Sell Close",
+                                "Days", "P&L%", "P&L$", "Capital", "Reason"],
                        tablefmt="simple", numalign="right", stralign="left"))
         print()
 
@@ -293,23 +317,50 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
             continue
         trows = ""
         for i, t in enumerate(s["trades"], 1):
-            entry_d = t.entry_date.strftime("%m/%d") if hasattr(t.entry_date, 'strftime') else str(t.entry_date)[:10]
-            exit_d = t.exit_date.strftime("%m/%d") if t.exit_date and hasattr(t.exit_date, 'strftime') else "—"
+            entry_d = t.entry_date.strftime("%Y-%m-%d") if hasattr(t.entry_date, 'strftime') else str(t.entry_date)[:10]
+            exit_d = t.exit_date.strftime("%Y-%m-%d") if t.exit_date and hasattr(t.exit_date, 'strftime') else "—"
             pnl_cls = "pos" if (t.pnl_pct or 0) >= 0 else "neg"
+
+            cap = t.capital_used if hasattr(t, 'capital_used') else 0
+            if t.pnl_pct is not None and cap > 0:
+                pnl_dollar = cap * t.pnl_pct / 100.0
+                pnl_d_str = f"${pnl_dollar:+,.2f}"
+            else:
+                pnl_d_str = "—"
+
+            if t.entry_date and t.exit_date:
+                try:
+                    hold_days = (pd.Timestamp(t.exit_date) - pd.Timestamp(t.entry_date)).days
+                except Exception:
+                    hold_days = "—"
+            else:
+                hold_days = "—"
+
             icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪️"}.get(t.exit_reason, "")
-            cap_str = f"${t.capital_used:,.0f}" if hasattr(t, 'capital_used') else "—"
+            cap_str = f"${cap:,.0f}" if cap else "—"
             trows += f"""<tr>
                 <td class="rank">{i}</td><td class="ticker">{t.ticker}</td>
                 <td>{entry_d}</td><td>${t.entry_price:,.2f}</td>
                 <td>{exit_d}</td><td>${t.exit_price:,.2f}</td>
+                <td>{hold_days}</td>
                 <td class="{pnl_cls}">{t.pnl_pct:+.2f}%</td>
+                <td class="{pnl_cls}">{pnl_d_str}</td>
                 <td>{cap_str}</td>
                 <td>{icon} {t.exit_reason}</td>
             </tr>"""
         trade_sections += f"""<div class="window-section">
-            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log</span></h2>
-            <table><thead><tr><th>#</th><th>Ticker</th><th>Entry</th><th>Price</th><th>Exit</th><th>Price</th><th>P&L</th><th>Capital</th><th>Reason</th></tr></thead>
+            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · all prices are daily closing prices</span></h2>
+            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Reason</th></tr></thead>
             <tbody>{trows}</tbody></table></div>"""
+
+    pos_pct_html = config.get("position_size_pct", 100)
+    min_vol_html = config.get("min_dollar_volume_m", 0)
+    rules_html = "buy top-1 gainer"
+    if min_vol_html > 0:
+        rules_html += f", min vol ≥${min_vol_html}M/day"
+    rules_html += f", {pos_pct_html:.0f}% capital/trade"
+    rules_html += f", sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}%"
+    rules_html += " · execution: daily CLOSING price"
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -319,7 +370,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
           --green:#3fb950; --red:#f85149; --accent:#58a6ff; --border:#30363d; }}
   * {{ box-sizing:border-box;margin:0;padding:0; }}
   body {{ background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-          padding:24px 16px;max-width:1100px;margin:0 auto; }}
+          padding:24px 16px;max-width:1200px;margin:0 auto; }}
   h1 {{ font-size:1.6rem;margin-bottom:4px; }}
   .muted {{ color:var(--muted);font-size:0.9rem;margin-bottom:20px; }}
   .summary-cards {{ display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px; }}
@@ -329,18 +380,18 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
   .window-section {{ background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin-bottom:16px; }}
   .window-section h2 {{ font-size:1.1rem;margin-bottom:12px; }}
   .subtitle {{ font-weight:400;color:var(--muted);font-size:0.9rem; }}
-  table {{ width:100%;border-collapse:collapse;font-size:0.88rem;margin-bottom:4px; }}
-  th {{ text-align:left;color:var(--muted);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--border); }}
-  td {{ padding:7px 10px;border-bottom:1px solid var(--border); }}
+  table {{ width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:4px; }}
+  th {{ text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap; }}
+  td {{ padding:6px 8px;border-bottom:1px solid var(--border); }}
   tr:hover td {{ background:rgba(88,166,255,0.05); }}
   .pos {{ color:var(--green); }} .neg {{ color:var(--red); }}
   .ticker {{ font-weight:700;color:var(--accent); }}
-  .rank {{ color:var(--muted);width:30px;text-align:right;padding-right:12px!important; }}
+  .rank {{ color:var(--muted);width:24px;text-align:right;padding-right:8px!important; }}
   footer {{ text-align:center;color:var(--muted);font-size:0.8rem;margin-top:32px; }}
 </style></head><body>
 <h1>📊 Backtest Report</h1>
 <p class="muted">{summary['backtest_start']} → {summary['backtest_end']} · {summary['trading_days']} trading days
-   · Rules: buy top-1 gainer, sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}% · Generated: {now_str}</p>
+   · Rules: {rules_html} · Generated: {now_str}</p>
 {cards}
 <div class="window-section"><h2>Strategy Summary</h2>
 <table><thead><tr><th>Window</th><th>Final Equity</th><th>Return</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Avg Return</th><th>Best</th><th>Worst</th></tr></thead>

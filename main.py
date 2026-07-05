@@ -61,7 +61,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top", "-n", type=int, default=10,
                         help="Number of top stocks per ranking (default: 10)")
     parser.add_argument("--tickers", "-t", type=str, default=None,
-                        help="Comma-separated ticker list (default: S&P 500)")
+                        help="Comma-separated ticker list (overrides --universe)")
+    parser.add_argument("--universe", "-u", type=str, default="sp500",
+                        choices=["sp500", "nasdaq100", "both"],
+                        help="Stock universe: sp500, nasdaq100, or both (default: sp500)")
     parser.add_argument("--min-price", "-p", type=float, default=1.0,
                         help="Minimum close price to include (default: 1.0)")
     parser.add_argument("--export", "-e", action="store_true",
@@ -103,7 +106,7 @@ def main() -> None:
         print_rankings, export_csv, generate_html,
         print_backtest_results, print_backtest_html,
     )
-    from stock_selector.tickers import SP500_TICKERS
+    from stock_selector.tickers import get_tickers
 
     args = parse_args()
 
@@ -111,7 +114,9 @@ def main() -> None:
     if args.tickers:
         tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
     else:
-        tickers = SP500_TICKERS
+        tickers = get_tickers(args.universe)
+        tag = args.universe.upper() if args.universe != "both" else "S&P 500 + NASDAQ-100"
+        print(f"Universe: {tag} ({len(tickers)} tickers)")
 
     # ── Determine how far back to fetch ─────────────────────────────────
     if args.backtest:

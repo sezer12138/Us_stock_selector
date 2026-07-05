@@ -1,20 +1,22 @@
 """
-Stock ticker lists for screening.
+Stock ticker lists for screening and backtesting.
 
-Provides S&P 500 constituents, plus the ability to fetch the latest list
-from Wikipedia as a fallback / refresh mechanism.
+Provides S&P 500 and NASDAQ-100 constituents.  Use --universe to
+choose: sp500 (default), nasdaq100, or both (deduplicated union).
 
 NOTE: yfinance uses hyphens for share-class tickers (BRK-B not BRK.B).
 """
 
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 import requests
 
 
-# S&P 500 tickers — hyphens for dual-class shares.
-# Periodically pruned of delisted / acquired symbols.
+# ═══════════════════════════════════════════════════════════════════════════
+# S&P 500 constituents
+# ═══════════════════════════════════════════════════════════════════════════
+
 SP500_TICKERS: List[str] = [
     "A", "AAPL", "ABBV", "ABNB", "ABT", "ACGL", "ACN", "ADBE", "ADI", "ADM",
     "ADP", "ADSK", "AEE", "AEP", "AES", "AFL", "AIG", "AIZ", "AJG", "AKAM",
@@ -69,18 +71,78 @@ SP500_TICKERS: List[str] = [
 ]
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# NASDAQ-100 constituents
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# The NASDAQ-100 includes the 100 largest non-financial companies listed
+# on the NASDAQ exchange.  There is substantial overlap with the S&P 500.
+
+NASDAQ100_TICKERS: List[str] = [
+    "AAPL", "ABNB", "ADBE", "ADI", "ADP", "ADSK", "AEP", "AMAT", "AMD",
+    "AMGN", "AMZN", "APP", "ARM", "ASML", "AVGO", "AXON",
+    "BIIB", "BKNG", "BKR", "CCEP", "CDNS", "CDW", "CEG", "CHTR",
+    "CMCSA", "COST", "CPRT", "CRWD", "CSCO", "CSGP", "CSX", "CTAS",
+    "CTSH", "DASH", "DDOG", "DLTR", "DXCM", "EA", "EXC", "FANG",
+    "FAST", "FTNT", "GEHC", "GFS", "GILD", "GOOG", "GOOGL", "HON",
+    "IDXX", "INTC", "INTU", "ISRG", "KDP", "KHC", "KLAC", "LIN",
+    "LRCX", "LULU", "MAR", "MCHP", "MDB", "MDLZ", "MELI", "META",
+    "MNST", "MPWR", "MRVL", "MSFT", "MU", "NFLX", "NVDA", "NXPI",
+    "ODFL", "ON", "ORLY", "PANW", "PAYX", "PCAR", "PDD", "PEP",
+    "PYPL", "QCOM", "REGN", "ROP", "ROST", "SBUX", "SMCI", "SNPS",
+    "TEAM", "TMUS", "TSLA", "TTD", "TTWO", "TXN", "VRSK", "VRTX",
+    "WBD", "WDAY", "XEL", "ZS",
+]
+
+# ── Universe helpers ─────────────────────────────────────────────────────
+
+# Valid universe keys and their ticker lists
+UNIVERSES = {
+    "sp500": SP500_TICKERS,
+    "nasdaq100": NASDAQ100_TICKERS,
+}
+
+
+def get_tickers(universe: str = "sp500") -> List[str]:
+    """
+    Return a deduplicated ticker list for the given universe.
+
+    Parameters
+    ----------
+    universe : str
+        One of 'sp500', 'nasdaq100', or 'both'.
+
+    Returns
+    -------
+    list[str] of uppercase ticker symbols.
+    """
+    universe = universe.lower().strip()
+
+    if universe == "both":
+        # Deduplicate while preserving order: S&P first, then NASDAQ-only
+        sp_set = set(SP500_TICKERS)
+        combined = list(SP500_TICKERS)
+        for t in NASDAQ100_TICKERS:
+            if t not in sp_set:
+                combined.append(t)
+        return combined
+
+    tickers = UNIVERSES.get(universe)
+    if tickers is None:
+        raise ValueError(f"Unknown universe '{universe}'. Choose: sp500, nasdaq100, both")
+    return list(tickers)
+
+
 def fetch_sp500_tickers() -> List[str]:
     """
     Fetch the current S&P 500 constituents from Wikipedia.
 
-    Returns the hard-coded list on failure, so the screener never
-    breaks because of a network issue.
+    Returns the hard-coded list on failure.
     """
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     try:
         tables = pd.read_html(url)
         tickers = tables[0]["Symbol"].tolist()
-        # Clean up dots in ticker names (e.g. BRK.B -> BRK-B for yfinance)
         tickers = [t.replace(".", "-") for t in tickers]
         return tickers
     except Exception:

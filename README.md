@@ -25,7 +25,8 @@ python main.py [OPTIONS]
 
 Options:
   --top N, -n N         Show top N stocks per ranking (default: 10)
-  --tickers SYM,SYM,..  Comma-separated ticker list (default: S&P 500)
+  --tickers SYM,SYM,..  Comma-separated ticker list (overrides --universe)
+  --universe U, -u U    Stock universe: sp500, nasdaq100, or both (default: sp500)
   --min-price P, -p P   Minimum close price to include (default: 1.0)
   --export, -e          Also save results to CSV
   --html                Generate self-contained HTML report
@@ -39,11 +40,20 @@ Options:
 # Top 15 stocks from a custom watchlist
 python main.py --top 15 --tickers AAPL,MSFT,NVDA,TSLA,GOOGL,META,AMZN
 
+# Screen NASDAQ-100 instead of S&P 500
+python main.py --universe nasdaq100
+
+# Screen both S&P 500 + NASDAQ-100 combined (deduplicated)
+python main.py --universe both
+
 # Screen S&P 500, exclude stocks under $5, export CSV + HTML
 python main.py --min-price 5 --export --html
 
 # Only 3-day and 7-day windows (faster)
 python main.py --max-window 7
+
+# Backtest on NASDAQ-100 universe
+python main.py --backtest --universe nasdaq100
 ```
 
 ## Backtest Usage

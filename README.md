@@ -15,7 +15,33 @@ pip install -r requirements.txt
 python main.py
 
 # Backtest: 60-day momentum paper trade
-python main.py --backtest
+python main.py --backtest --html
+
+# Load a preset config
+python main.py --config config/conservative.json
+```
+
+## Config Presets
+
+The `config/` folder contains JSON preset files that bundle all arguments together.
+Use `--config` to load one — any CLI flags you add will override the preset.
+
+| Preset | Description |
+|--------|-------------|
+| `config/default.json` | Balanced: 20% position, $10M min vol, close exec |
+| `config/conservative.json` | Low risk: 10% position, $50M min vol, max hold 15d, intraday exec |
+| `config/aggressive.json` | High risk: 50% position, no vol filter, TP+15%/SL-8%, close exec |
+| `config/nasdaq100_quick.json` | Quick NASDAQ-100 test: 30d, open exec, max hold 7d |
+| `config/screening.json` | Screening mode: top 15 S&P 500, export CSV + HTML |
+
+Create your own by copying any preset and editing the JSON.
+
+```bash
+# Run with a preset
+python main.py --config config/conservative.json
+
+# Override specific settings
+python main.py --config config/aggressive.json --bt-exec intraday --bt-days 90
 ```
 
 ## Screening Usage
@@ -30,7 +56,7 @@ Options:
   --min-price P, -p P   Minimum close price to include (default: 1.0)
   --export, -e          Also save results to CSV
   --html                Generate self-contained HTML report
-  --output-dir DIR, -o  Export directory (default: current dir)
+  --output-dir DIR, -o  Export directory (default: results/)
   --max-window D, -w D  Max lookback window: 3, 7, 14, 21, or 30 (default: 30)
 ```
 
@@ -140,13 +166,20 @@ us_stock_selector/
 ├── main.py                      # CLI entry point
 ├── requirements.txt
 ├── README.md
-└── stock_selector/
-    ├── __init__.py
-    ├── fetcher.py               # Yahoo Finance data download (OHLCV)
-    ├── screener.py              # Ranking / screening engine
-    ├── backtest.py              # Momentum backtesting engine
-    ├── display.py               # Terminal tables, CSV & HTML export
-    └── tickers.py               # S&P 500 constituent list
+├── config/                      # JSON preset configs
+│   ├── default.json
+│   ├── conservative.json
+│   ├── aggressive.json
+│   ├── nasdaq100_quick.json
+│   └── screening.json
+├── results/                     # Generated reports (HTML, CSV)
+├── stock_selector/
+│   ├── __init__.py
+│   ├── fetcher.py               # Yahoo Finance data download (OHLCV)
+│   ├── screener.py              # Ranking / screening engine
+│   ├── backtest.py              # Momentum backtesting engine
+│   ├── display.py               # Terminal tables, CSV & HTML export
+│   └── tickers.py               # S&P 500 & NASDAQ-100 constituent lists
 ```
 
 ## Output

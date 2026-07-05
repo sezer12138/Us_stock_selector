@@ -59,9 +59,12 @@ def _print_rank_table(ranks, metric_label: str) -> None:
     print(tabulate(rows, headers=headers, tablefmt="simple", numalign="right", stralign="left"))
 
 
-def export_csv(results: Dict[str, WindowResult], output_dir: str = ".") -> str:
+def export_csv(results: Dict[str, WindowResult], output_dir: str = ".",
+               filename: str = None) -> str:
     """Export all rankings into one CSV file. Returns the file path."""
-    filename = f"stock_rankings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    if filename is None:
+        filename = f"stock_rankings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    os.makedirs(output_dir, exist_ok=True)
     filepath = os.path.join(output_dir, filename)
 
     rows = []
@@ -90,13 +93,15 @@ def export_csv(results: Dict[str, WindowResult], output_dir: str = ".") -> str:
 
 # ── HTML Report Generation ────────────────────────────────────────────────
 
-def generate_html(results: Dict[str, WindowResult], top_n: int = 10, output_dir: str = ".") -> str:
+def generate_html(results: Dict[str, WindowResult], top_n: int = 10,
+                   output_dir: str = ".", filename: str = None) -> str:
     """
     Generate a self-contained HTML report and write it to disk.
     Returns the file path.
     """
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    filename = f"stock_rankings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    if filename is None:
+        filename = f"stock_rankings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
     filepath = os.path.join(output_dir, filename)
 
     sections_html = ""
@@ -279,11 +284,14 @@ def print_backtest_results(bt_results: Dict) -> None:
     print("─" * 78)
 
 
-def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
+def print_backtest_html(bt_results: Dict, output_dir: str = ".",
+                        filename: str = None) -> str:
     """Generate a self-contained HTML backtest report. Returns file path."""
     from datetime import datetime as dt
     now_str = dt.now().strftime("%Y-%m-%d %H:%M:%S")
-    filename = f"backtest_report_{dt.now().strftime('%Y%m%d_%H%M%S')}.html"
+    if filename is None:
+        filename = f"backtest_report_{dt.now().strftime('%Y%m%d_%H%M%S')}.html"
+    os.makedirs(output_dir, exist_ok=True)
     filepath = os.path.join(output_dir, filename)
 
     summary = bt_results["summary"]

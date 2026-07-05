@@ -6,38 +6,34 @@ Ranks stocks by price increase % and average trading volume across
 5 lookback windows: 3d, 7d, 14d, 21d, 30d.
 
 Also supports a momentum backtest mode: paper-trade the top-1 gainer
-per window with +10% take-profit and -5% stop-loss.
+per window with configurable take-profit / stop-loss / time-stop rules.
 
 Usage:
-    python main.py                          # default: S&P 500, top 10
-    python main.py --top 15                # top 15 instead of 10
-    python main.py --tickers AAPL,MSFT,NVDA,TSLA,GOOGL
-    python main.py --min-price 5           # exclude stocks below $5
-    python main.py --html --export         # HTML + CSV reports
-
-    python main.py --backtest              # run 60-day momentum backtest
-    python main.py --backtest --bt-days 90 # 90-day backtest
-    python main.py --backtest --bt-capital 100000  # $100k starting capital
+    python main.py                                    # defaults
+    python main.py --config config/conservative.json  # load preset
+    python main.py --backtest                         # 60-day backtest
+    python main.py --backtest --bt-exec intraday      # intraday execution
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 
+
+# ── Proxy detection ────────────────────────────────────────────────────────
 
 def _auto_detect_proxy() -> None:
     """Detect macOS system proxy and set env vars for yfinance/curl_cffi."""
     if os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"):
         return
-
     try:
         result = subprocess.run(
-            ["scutil", "--proxy"],
-            capture_output=True, text=True, timeout=5,
+            ["scutil", "--proxy"], capture_output=True, text=True, timeout=5,
         )
-        proxy_host = None
-        proxy_port = None
+        proxy_host = proxy_port = None
         for line in result.stdout.splitlines():
             if "HTTPProxy" in line and "HTTPEnable" not in line:
                 proxy_host = line.split(":")[-1].strip()
@@ -45,60 +41,163 @@ def _auto_detect_proxy() -> None:
                 proxy_port = line.split(":")[-1].strip()
         if proxy_host and proxy_port:
             proxy_url = f"http://{proxy_host}:{proxy_port}"
-            os.environ["HTTP_PROXY"] = proxy_url
-            os.environ["HTTPS_PROXY"] = proxy_url
-            os.environ["http_proxy"] = proxy_url
-            os.environ["https_proxy"] = proxy_url
+            for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+                os.environ[var] = proxy_url
     except Exception:
         pass
 
 
-def parse_args() -> argparse.Namespace:
+# ── Config file support ────────────────────────────────────────────────────
+
+def _load_config(path: str) -> dict:
+    """Load a JSON config file.  Exits with a message on failure."""
+    if not os.path.exists(path):
+        print(f"ERROR: Config file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        with open(path) as f:
+            cfg = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in {path}: {e}", file=sys.stderr)
+        sys.exit(1)
+    return cfg
+
+
+def _apply_config(args: argparse.Namespace, cfg: dict, user_set: set) -> None:
+    """
+    Apply JSON config values to args for any key that matches an
+    argparse dest name.  Skips keys the user explicitly set via CLI.
+    """
+    key_map = {
+        "top": "top", "n": "top",
+        "tickers": "tickers", "universe": "universe",
+        "min_price": "min_price", "min-price": "min_price",
+        "export": "export", "html": "html",
+        "output_dir": "output_dir", "output-dir": "output_dir",
+        "max_window": "max_window", "max-window": "max_window",
+        "backtest": "backtest",
+        "bt_days": "bt_days", "bt-days": "bt_days",
+        "bt_capital": "bt_capital", "bt-capital": "bt_capital",
+        "bt_tp": "bt_tp", "bt-tp": "bt_tp",
+        "bt_sl": "bt_sl", "bt-sl": "bt_sl",
+        "bt_position_pct": "bt_position_pct", "bt-position-pct": "bt_position_pct",
+        "bt_min_vol": "bt_min_vol", "bt-min-vol": "bt_min_vol",
+        "bt_max_hold": "bt_max_hold", "bt-max-hold": "bt_max_hold",
+        "bt_exec": "bt_exec", "bt-exec": "bt_exec",
+    }
+
+    for json_key, value in cfg.items():
+        if json_key.startswith("_"):
+            continue
+        dest = key_map.get(json_key)
+        if dest is None or dest in user_set:
+            continue
+
+        # Apply config value with correct type
+        current = getattr(args, dest)
+        if isinstance(current, bool):
+            setattr(args, dest, bool(value))
+        elif isinstance(current, int):
+            setattr(args, dest, int(value))
+        elif isinstance(current, float):
+            setattr(args, dest, float(value))
+        else:
+            setattr(args, dest, value)
+
+
+# ── Argument parsing ───────────────────────────────────────────────────────
+
+def parse_args(argv: list = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="US Stock Selector — Top N stocks by price gain & volume",
     )
+    # Config
+    parser.add_argument("--config", "-c", type=str, default=None,
+                        help="Path to JSON config file (preset)")
     # Screening
-    parser.add_argument("--top", "-n", type=int, default=10,
-                        help="Number of top stocks per ranking (default: 10)")
-    parser.add_argument("--tickers", "-t", type=str, default=None,
-                        help="Comma-separated ticker list (overrides --universe)")
+    parser.add_argument("--top", "-n", type=int, default=10)
+    parser.add_argument("--tickers", "-t", type=str, default=None)
     parser.add_argument("--universe", "-u", type=str, default="sp500",
-                        choices=["sp500", "nasdaq100", "both"],
-                        help="Stock universe: sp500, nasdaq100, or both (default: sp500)")
-    parser.add_argument("--min-price", "-p", type=float, default=1.0,
-                        help="Minimum close price to include (default: 1.0)")
-    parser.add_argument("--export", "-e", action="store_true",
-                        help="Export results to CSV")
-    parser.add_argument("--html", action="store_true",
-                        help="Generate a self-contained HTML report")
-    parser.add_argument("--output-dir", "-o", type=str, default=".",
-                        help="Directory for CSV/HTML export (default: .)")
+                        choices=["sp500", "nasdaq100", "both"])
+    parser.add_argument("--min-price", "-p", type=float, default=1.0)
+    parser.add_argument("--export", "-e", action="store_true")
+    parser.add_argument("--html", action="store_true")
+    parser.add_argument("--output-dir", "-o", type=str, default="results")
     parser.add_argument("--max-window", "-w", type=int, default=30,
-                        choices=[3, 7, 14, 21, 30],
-                        help="Max lookback window (default: 30)")
-
+                        choices=[3, 7, 14, 21, 30])
     # Backtest
-    parser.add_argument("--backtest", "-b", action="store_true",
-                        help="Run 60-day momentum backtest (paper trade)")
-    parser.add_argument("--bt-days", type=int, default=60,
-                        help="Backtest period in calendar days (default: 60)")
-    parser.add_argument("--bt-capital", type=float, default=50000.0,
-                        help="Initial capital for backtest (default: 50000)")
-    parser.add_argument("--bt-tp", type=float, default=10.0,
-                        help="Take-profit %% (default: 10)")
-    parser.add_argument("--bt-sl", type=float, default=5.0,
-                        help="Stop-loss %% (default: 5)")
-    parser.add_argument("--bt-position-pct", type=float, default=20.0,
-                        help="%% of capital to deploy per trade (default: 20)")
-    parser.add_argument("--bt-min-vol", type=float, default=10.0,
-                        help="Min avg daily dollar-volume in $M (default: 10, 0=disable)")
-    parser.add_argument("--bt-max-hold", type=int, default=0,
-                        help="Max hold days before force-exit (default: 0=disabled)")
+    parser.add_argument("--backtest", "-b", action="store_true")
+    parser.add_argument("--bt-days", type=int, default=60)
+    parser.add_argument("--bt-capital", type=float, default=50000.0)
+    parser.add_argument("--bt-tp", type=float, default=10.0)
+    parser.add_argument("--bt-sl", type=float, default=5.0)
+    parser.add_argument("--bt-position-pct", type=float, default=20.0)
+    parser.add_argument("--bt-min-vol", type=float, default=10.0)
+    parser.add_argument("--bt-max-hold", type=int, default=0)
     parser.add_argument("--bt-exec", type=str, default="close",
-                        choices=["close", "open", "intraday"],
-                        help="Execution price: close, open, or intraday (default: close)")
-    return parser.parse_args()
+                        choices=["close", "open", "intraday"])
 
+    # Determine which args were explicitly passed on the command line
+    # by scanning sys.argv for flag names.  This is more reliable than
+    # comparing with defaults (which fails when user passes the default value).
+    import re
+    cli_tokens = set()
+    cli_args = argv if argv is not None else sys.argv[1:]
+    for i, tok in enumerate(cli_args):
+        if tok.startswith("--"):
+            dest = tok.lstrip("-").replace("-", "_")
+            cli_tokens.add(dest)
+        elif tok.startswith("-") and len(tok) == 2:
+            # Short flags — map to dest names
+            short_map = {"n": "top", "t": "tickers", "u": "universe",
+                         "p": "min_price", "e": "export", "o": "output_dir",
+                         "w": "max_window", "b": "backtest", "c": "config"}
+            cli_tokens.add(short_map.get(tok[1], ""))
+
+    # Parse actual args
+    args = parser.parse_args(argv)
+
+    # Build set of dest names the user explicitly set
+    user_set = cli_tokens & set(vars(args).keys())
+
+    # Load config file (CLI values override config)
+    if args.config:
+        cfg = _load_config(args.config)
+        _apply_config(args, cfg, user_set)
+        cfg_name = os.path.splitext(os.path.basename(args.config))[0]
+        print(f"Loaded config: {cfg_name}")
+
+    return args
+
+
+# ── Report filename builder ────────────────────────────────────────────────
+
+def _report_basename(args: argparse.Namespace) -> str:
+    """Build a descriptive base filename like 'backtest_sp500_60d_tp10_sl5_pos20'."""
+    mode = "backtest" if args.backtest else "screen"
+    universe = args.universe
+    if args.tickers:
+        universe = "custom"
+
+    if args.backtest:
+        parts = [
+            mode, universe,
+            f"{args.bt_days}d",
+            f"tp{args.bt_tp:.0f}", f"sl{args.bt_sl:.0f}",
+            f"pos{args.bt_position_pct:.0f}",
+        ]
+        if args.bt_max_hold > 0:
+            parts.append(f"max{args.bt_max_hold}d")
+        if args.bt_min_vol:
+            parts.append(f"vol{args.bt_min_vol:.0f}M")
+        parts.append(args.bt_exec)
+    else:
+        parts = [mode, universe, f"top{args.top}", f"w{args.max_window}"]
+
+    return "_".join(parts)
+
+
+# ── Main ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
     _auto_detect_proxy()
@@ -113,6 +212,9 @@ def main() -> None:
 
     args = parse_args()
 
+    # Ensure output directory exists
+    os.makedirs(args.output_dir, exist_ok=True)
+
     # ── Ticker list ─────────────────────────────────────────────────────
     if args.tickers:
         tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
@@ -121,31 +223,33 @@ def main() -> None:
         tag = args.universe.upper() if args.universe != "both" else "S&P 500 + NASDAQ-100"
         print(f"Universe: {tag} ({len(tickers)} tickers)")
 
-    # ── Determine how far back to fetch ─────────────────────────────────
+    # ── Data fetch ──────────────────────────────────────────────────────
     if args.backtest:
-        # Need: max_window + backtest_days + buffer
         lookback = args.max_window + args.bt_days + 20
     else:
         lookback = args.max_window
 
-    # ── Fetch data ──────────────────────────────────────────────────────
     print(f"\nDownloading data for {len(tickers)} tickers ({lookback}d lookback)...")
     print("This may take a minute or two.\n")
 
     df = fetch_historical_data(tickers, lookback_days=lookback, progress=True)
 
     if df is None or df.empty:
-        print("ERROR: Could not fetch stock data. Check your internet connection.", file=sys.stderr)
-        print("If you are behind a proxy, set HTTP_PROXY / HTTPS_PROXY and retry.", file=sys.stderr)
+        print("ERROR: Could not fetch stock data.", file=sys.stderr)
         sys.exit(1)
 
     print(f"\nDownloaded {len(df)} rows across {df['Ticker'].nunique()} tickers.")
+
+    # Build base filename for reports
+    base = _report_basename(args)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ── Backtest path ───────────────────────────────────────────────────
     if args.backtest:
         from stock_selector.backtest import run_backtest
 
-        print(f"Running backtest ({args.bt_days}d, ${args.bt_capital:,.0f} capital)...")
+        print(f"Running backtest ({args.bt_days}d, ${args.bt_capital:,.0f} capital, "
+              f"exec={args.bt_exec})...")
 
         bt_results = run_backtest(
             df,
@@ -163,13 +267,15 @@ def main() -> None:
         print_backtest_results(bt_results)
 
         if args.html:
-            path = print_backtest_html(bt_results, output_dir=args.output_dir)
-            print(f"🌐 Backtest HTML report: {path}")
+            path = print_backtest_html(bt_results, output_dir=args.output_dir,
+                                       filename=f"{base}_{ts}.html")
+            print(f"🌐 HTML report: {path}")
         return
 
-    # ── Screening path (default) ────────────────────────────────────────
+    # ── Screening path ──────────────────────────────────────────────────
     effective_windows = {k: v for k, v in WINDOWS.items() if v <= args.max_window}
-    results = compute_rankings(df, top_n=args.top, min_price=args.min_price, windows=effective_windows)
+    results = compute_rankings(df, top_n=args.top, min_price=args.min_price,
+                               windows=effective_windows)
 
     if not results:
         print("No rankings could be computed (insufficient data).", file=sys.stderr)
@@ -179,10 +285,11 @@ def main() -> None:
 
     if args.export:
         path = export_csv(results, output_dir=args.output_dir)
-        print(f"📁 CSV exported to: {path}")
+        print(f"📁 CSV: {path}")
 
     if args.html:
-        path = generate_html(results, top_n=args.top, output_dir=args.output_dir)
+        path = generate_html(results, top_n=args.top, output_dir=args.output_dir,
+                             filename=f"{base}_{ts}.html")
         print(f"🌐 HTML report: {path}")
 
 

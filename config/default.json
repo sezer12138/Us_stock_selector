@@ -1,0 +1,16 @@
+{
+    "_description": "Default backtest configuration — balanced risk/reward",
+    "universe": "sp500",
+    "top": 10,
+    "max_window": 30,
+    "backtest": true,
+    "bt_days": 60,
+    "bt_capital": 50000,
+    "bt_tp": 10,
+    "bt_sl": 5,
+    "bt_position_pct": 20,
+    "bt_min_vol": 10,
+    "bt_max_hold": 0,
+    "bt_exec": "close",
+    "html": true
+}

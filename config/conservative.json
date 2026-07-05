@@ -1,0 +1,14 @@
+{
+    "_description": "Conservative: small position size, high liquidity, time stop, intraday execution",
+    "universe": "sp500",
+    "backtest": true,
+    "bt_days": 60,
+    "bt_capital": 50000,
+    "bt_tp": 10,
+    "bt_sl": 5,
+    "bt_position_pct": 10,
+    "bt_min_vol": 50,
+    "bt_max_hold": 15,
+    "bt_exec": "intraday",
+    "html": true
+}

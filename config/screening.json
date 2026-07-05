@@ -1,0 +1,10 @@
+{
+    "_description": "Screening mode: top 15 S&P 500 stocks, all windows, with HTML report",
+    "backtest": false,
+    "universe": "sp500",
+    "top": 15,
+    "min_price": 5,
+    "max_window": 30,
+    "html": true,
+    "export": true
+}

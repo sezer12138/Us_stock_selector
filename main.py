@@ -89,6 +89,8 @@ def parse_args() -> argparse.Namespace:
                         help="%% of capital to deploy per trade (default: 20)")
     parser.add_argument("--bt-min-vol", type=float, default=10.0,
                         help="Min avg daily dollar-volume in $M (default: 10, 0=disable)")
+    parser.add_argument("--bt-max-hold", type=int, default=0,
+                        help="Max hold days before force-exit (default: 0=disabled)")
     return parser.parse_args()
 
 
@@ -145,6 +147,7 @@ def main() -> None:
             backtest_days=args.bt_days,
             position_size_pct=args.bt_position_pct,
             min_dollar_volume_m=args.bt_min_vol,
+            max_hold_days=args.bt_max_hold,
             windows={k: v for k, v in WINDOWS.items() if v <= args.max_window},
         )
 

@@ -36,7 +36,7 @@ class Trade:
     exit_date: Optional[pd.Timestamp] = None
     exit_price: Optional[float] = None
     pnl_pct: Optional[float] = None
-    exit_reason: str = "open"
+    exit_reason: str = "open"          # take_profit | stop_loss | time_stop | end_of_period
     # List of (date_str, close_price) for sparkline rendering
     price_path: List = field(default_factory=list)
 
@@ -160,6 +160,7 @@ def run_backtest(
     backtest_days: int = 60,
     position_size_pct: float = 20.0,
     min_dollar_volume_m: float = 10.0,
+    max_hold_days: int = 0,
     windows: Optional[Dict[str, int]] = None,
 ) -> Dict:
     """
@@ -228,6 +229,7 @@ def run_backtest(
                 cur_price = _get_close(df, st.position_ticker, day)
                 if cur_price is not None and st.entry_price > 0:
                     pnl_pct = (cur_price - st.entry_price) / st.entry_price * 100.0
+                    hold_days = (day - st.entry_date).days
 
                     should_sell = False
                     reason = "open"
@@ -237,6 +239,9 @@ def run_backtest(
                     elif pnl_pct <= -stop_loss_pct:
                         should_sell = True
                         reason = "stop_loss"
+                    elif max_hold_days > 0 and hold_days >= max_hold_days:
+                        should_sell = True
+                        reason = "time_stop"
 
                     if should_sell:
                         proceeds = st.shares * cur_price
@@ -325,6 +330,7 @@ def run_backtest(
 
         wins = [t for t in st.trades if t.exit_reason == "take_profit"]
         losses = [t for t in st.trades if t.exit_reason == "stop_loss"]
+        time_stops = [t for t in st.trades if t.exit_reason == "time_stop"]
         eop = [t for t in st.trades if t.exit_reason == "end_of_period"]
 
         returns = [t.pnl_pct for t in st.trades if t.pnl_pct is not None]
@@ -341,6 +347,7 @@ def run_backtest(
             "total_trades": len(st.trades),
             "take_profits": len(wins),
             "stop_losses": len(losses),
+            "time_stops": len(time_stops),
             "end_of_period": len(eop),
             "avg_return_pct": round(avg_return, 2),
             "best_trade_pct": round(best_trade, 2),
@@ -367,6 +374,7 @@ def run_backtest(
         "config": {
             "take_profit_pct": take_profit_pct,
             "stop_loss_pct": stop_loss_pct,
+            "max_hold_days": max_hold_days,
             "backtest_days": backtest_days,
             "position_size_pct": position_size_pct,
             "min_dollar_volume_m": min_dollar_volume_m,

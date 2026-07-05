@@ -194,7 +194,11 @@ def print_backtest_results(bt_results: Dict) -> None:
     if min_vol > 0:
         rules_parts.append(f"min vol ≥${min_vol}M/day")
     rules_parts.append(f"{pos_pct:.0f}% capital/trade")
-    rules_parts.append(f"sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}% @ close")
+    max_hold = config.get("max_hold_days", 0)
+    rules_parts.append(f"sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}%")
+    if max_hold > 0:
+        rules_parts.append(f"max hold {max_hold}d")
+    rules_parts.append(f"@ close")
     print(f"  Rules           : {', '.join(rules_parts)}")
     print(f"  Execution       : all entries & exits at daily CLOSING price")
     print()
@@ -212,12 +216,13 @@ def print_backtest_results(bt_results: Dict) -> None:
             s["total_trades"],
             s["take_profits"],
             s["stop_losses"],
+            s.get("time_stops", 0),
             f"{s['avg_return_pct']:+.2f}%",
             f"{s['best_trade_pct']:+.2f}%",
             f"{s['worst_trade_pct']:+.2f}%",
         ])
 
-    headers = ["Window", "Final Equity", "Return", "Trades", "Wins", "Losses",
+    headers = ["Window", "Final Equity", "Return", "Trades", "Wins", "Losses", "⏰Stop",
                "Avg Return", "Best", "Worst"]
     print(tabulate(rows, headers=headers, tablefmt="simple", numalign="right", stralign="left"))
     print()
@@ -254,7 +259,7 @@ def print_backtest_results(bt_results: Dict) -> None:
             else:
                 hold_days = "—"
 
-            icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪"}.get(t.exit_reason, "")
+            icon = {"take_profit": "🟢", "stop_loss": "🔴", "time_stop": "⏰", "end_of_period": "⚪"}.get(t.exit_reason, "")
             cap_str = f"${cap:,.0f}" if cap else "—"
             trade_rows.append([
                 i, t.ticker, entry_d, f"${t.entry_price:,.2f}",
@@ -303,7 +308,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
             <td class="ticker">{label.upper()}</td>
             <td>${s['final_equity']:,.2f}</td>
             <td class="{ret_cls}">{s['return_pct']:+.2f}%</td>
-            <td>{s['total_trades']}</td><td>{s['take_profits']}</td><td>{s['stop_losses']}</td>
+            <td>{s['total_trades']}</td><td>{s['take_profits']}</td><td>{s['stop_losses']}</td><td>{s.get('time_stops', 0)}</td>
             <td class="{"pos" if s['avg_return_pct'] >= 0 else "neg"}">{s['avg_return_pct']:+.2f}%</td>
             <td class="pos">{s['best_trade_pct']:+.2f}%</td>
             <td class="neg">{s['worst_trade_pct']:+.2f}%</td>
@@ -336,7 +341,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
             else:
                 hold_days = "—"
 
-            icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪️"}.get(t.exit_reason, "")
+            icon = {"take_profit": "🟢", "stop_loss": "🔴", "time_stop": "⏰", "end_of_period": "⚪️"}.get(t.exit_reason, "")
             cap_str = f"${cap:,.0f}" if cap else "—"
 
             # K-line candlestick chart
@@ -368,7 +373,10 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
     if min_vol_html > 0:
         rules_html += f", min vol ≥${min_vol_html}M/day"
     rules_html += f", {pos_pct_html:.0f}% capital/trade"
+    max_hold_html = config.get("max_hold_days", 0)
     rules_html += f", sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}%"
+    if max_hold_html > 0:
+        rules_html += f", max hold {max_hold_html}d"
     rules_html += " · execution: daily CLOSING price"
 
     html = f"""<!DOCTYPE html>
@@ -404,7 +412,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
    · Rules: {rules_html} · Generated: {now_str}</p>
 {cards}
 <div class="window-section"><h2>Strategy Summary</h2>
-<table><thead><tr><th>Window</th><th>Final Equity</th><th>Return</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Avg Return</th><th>Best</th><th>Worst</th></tr></thead>
+<table><thead><tr><th>Window</th><th>Final Equity</th><th>Return</th><th>Trades</th><th>Wins</th><th>Losses</th><th>⏰Stop</th><th>Avg Return</th><th>Best</th><th>Worst</th></tr></thead>
 <tbody>{strat_rows}</tbody></table></div>
 {trade_sections}
 <footer>US Stock Selector · Backtest Report · {now_str}</footer>

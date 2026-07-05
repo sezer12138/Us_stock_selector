@@ -199,8 +199,12 @@ def print_backtest_results(bt_results: Dict) -> None:
     if max_hold > 0:
         rules_parts.append(f"max hold {max_hold}d")
     rules_parts.append(f"@ close")
+    exec_mode = config.get("exec_mode", "close")
+    exec_desc = {"close": "entries & exits at daily CLOSING price",
+                 "open": "signal at close, execute at NEXT DAY OPEN",
+                 "intraday": "entry at next open, exit at intraday TP/SL level when OHLC range confirms"}
     print(f"  Rules           : {', '.join(rules_parts)}")
-    print(f"  Execution       : all entries & exits at daily CLOSING price")
+    print(f"  Execution       : {exec_desc.get(exec_mode, exec_mode)}")
     print()
 
     # ── Per-strategy summary table ──
@@ -385,7 +389,10 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
     rules_html += f", sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}%"
     if max_hold_html > 0:
         rules_html += f", max hold {max_hold_html}d"
-    rules_html += " · execution: daily CLOSING price"
+    exec_mode_html = config.get("exec_mode", "close")
+    exec_desc_html = {"close": "daily CLOSING price", "open": "next-day OPEN price",
+                      "intraday": "next open entry, intraday TP/SL exit"}
+    rules_html += f" · execution: {exec_desc_html.get(exec_mode_html, exec_mode_html)}"
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

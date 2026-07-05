@@ -94,6 +94,9 @@ def parse_args() -> argparse.Namespace:
                         help="Min avg daily dollar-volume in $M (default: 10, 0=disable)")
     parser.add_argument("--bt-max-hold", type=int, default=0,
                         help="Max hold days before force-exit (default: 0=disabled)")
+    parser.add_argument("--bt-exec", type=str, default="close",
+                        choices=["close", "open", "intraday"],
+                        help="Execution price: close, open, or intraday (default: close)")
     return parser.parse_args()
 
 
@@ -153,6 +156,7 @@ def main() -> None:
             position_size_pct=args.bt_position_pct,
             min_dollar_volume_m=args.bt_min_vol,
             max_hold_days=args.bt_max_hold,
+            exec_mode=args.bt_exec,
             windows={k: v for k, v in WINDOWS.items() if v <= args.max_window},
         )
 

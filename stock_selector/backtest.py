@@ -6,9 +6,11 @@ top-1 price-gainer over a given lookback window (filtered by minimum
 daily dollar-volume for liquidity), and exits when the position hits
 take-profit or stop-loss thresholds.
 
-Each trade risks only a configurable percentage of available capital
-(e.g. 20%), leaving the rest as cash reserve — realistic position sizing
-rather than all-in bets.
+Supports three execution modes:
+  - close    : signal & execute at daily closing price (default)
+  - open     : signal at close, execute at NEXT day's open (no look-ahead)
+  - intraday : signal at close, enter at next open, exit at intraday TP/SL
+               crossing level when OHLC range confirms it was reachable
 
 Supports five independent window strategies: 3d, 7d, 14d, 21d, 30d.
 """
@@ -32,28 +34,34 @@ class Trade:
     ticker: str
     entry_date: pd.Timestamp
     entry_price: float
-    capital_used: float          # how much cash was deployed for this trade
-    entry_gain_pct: float = 0.0  # price increase % over the window at entry
-    entry_avg_vol: float = 0.0   # avg daily dollar-volume at entry
+    capital_used: float
+    entry_gain_pct: float = 0.0
+    entry_avg_vol: float = 0.0
+    exec_type: str = "close"             # close | open | intraday
     exit_date: Optional[pd.Timestamp] = None
     exit_price: Optional[float] = None
     pnl_pct: Optional[float] = None
-    exit_reason: str = "open"          # take_profit | stop_loss | time_stop | end_of_period
-    # List of [date_str, open, high, low, close] for K-line rendering
+    exit_reason: str = "open"
     price_path: List = field(default_factory=list)
 
 
 @dataclass
 class StrategyState:
     """Mutable state for one window-strategy during the walk-forward."""
-    cash: float                   # total available buying power (invested + reserve)
+    cash: float
     position_ticker: Optional[str] = None
     entry_price: float = 0.0
     entry_date: Optional[pd.Timestamp] = None
-    entry_gain_pct: float = 0.0   # gain % at time of entry
-    entry_avg_vol: float = 0.0    # avg daily dollar-volume at entry
+    entry_gain_pct: float = 0.0
+    entry_avg_vol: float = 0.0
+    exec_type: str = "close"
     shares: float = 0.0
-    invested_amount: float = 0.0  # cash locked in current position
+    invested_amount: float = 0.0
+    # Delayed entry (open / intraday modes): signal computed at close T,
+    # executed at open T+1.
+    pending_ticker: Optional[str] = None
+    pending_gain_pct: float = 0.0
+    pending_avg_vol: float = 0.0
     trades: List[Trade] = field(default_factory=list)
     equity_curve: List[Tuple[pd.Timestamp, float]] = field(default_factory=list)
 
@@ -61,12 +69,8 @@ class StrategyState:
 # ── Core helpers ───────────────────────────────────────────────────────────
 
 def _dollar_volume(
-    df: pd.DataFrame,
-    ticker: str,
-    today: pd.Timestamp,
-    window_days: int,
+    df: pd.DataFrame, ticker: str, today: pd.Timestamp, window_days: int,
 ) -> Optional[float]:
-    """Average daily dollar-volume (Close × Volume) for `ticker` over `window_days`."""
     cutoff = today - pd.Timedelta(days=window_days)
     mask = (df["Ticker"] == ticker) & (df["Date"] >= cutoff) & (df["Date"] <= today)
     recent = df.loc[mask]
@@ -76,30 +80,15 @@ def _dollar_volume(
 
 
 def _top_gainer(
-    df: pd.DataFrame,
-    today: pd.Timestamp,
-    window_days: int,
+    df: pd.DataFrame, today: pd.Timestamp, window_days: int,
     min_dollar_volume: float = 0.0,
 ) -> Optional[Tuple[str, float, float]]:
-    """
-    Return (ticker, gain_pct, avg_dollar_volume) for the stock with the
-    highest price-increase % over the last `window_days` calendar days.
-
-    Stocks whose average daily dollar-volume falls below `min_dollar_volume`
-    are excluded.
-
-    Uses only data on or before `today` (no look-ahead).
-    """
     cutoff = today - pd.Timedelta(days=window_days)
     window_data = df[(df["Date"] >= cutoff) & (df["Date"] <= today)]
-
     if window_data.empty:
         return None
 
-    best_ticker = None
-    best_gain = -float("inf")
-    best_vol = 0.0
-
+    best_ticker, best_gain, best_vol = None, -float("inf"), 0.0
     for ticker, group in window_data.groupby("Ticker"):
         if len(group) < 2:
             continue
@@ -107,56 +96,90 @@ def _top_gainer(
         latest = group.loc[group["Date"].idxmax()]
         if earliest["Close"] <= 0:
             continue
-
         avg_dv = (group["Close"] * group["Volume"]).mean()
-
         if min_dollar_volume > 0 and avg_dv < min_dollar_volume:
             continue
-
         pct = (latest["Close"] - earliest["Close"]) / earliest["Close"] * 100.0
         if pct > best_gain:
-            best_gain = pct
-            best_ticker = ticker
-            best_vol = avg_dv
-
+            best_gain, best_ticker, best_vol = pct, ticker, avg_dv
     if best_ticker is None:
         return None
     return (best_ticker, best_gain, best_vol)
 
 
-def _get_close(df: pd.DataFrame, ticker: str, date: pd.Timestamp) -> Optional[float]:
+def _get_ohlc(df: pd.DataFrame, ticker: str, date: pd.Timestamp) -> Optional[dict]:
+    """Return {open, high, low, close} dict for `ticker` on `date`, or None."""
     rows = df[(df["Ticker"] == ticker) & (df["Date"] == date)]
     if rows.empty:
         return None
-    return float(rows["Close"].iloc[0])
+    r = rows.iloc[0]
+    return {"open": float(r["Open"]), "high": float(r["High"]),
+            "low": float(r["Low"]), "close": float(r["Close"])}
 
 
-def _price_path(
-    df: pd.DataFrame,
-    ticker: str,
-    entry_date: pd.Timestamp,
-    exit_date: pd.Timestamp,
-) -> List:
-    """
-    Extract daily OHLC bars for `ticker` from `entry_date` to `exit_date`
-    (inclusive). Returns a list of [date_str, open, high, low, close] per day.
-    """
-    mask = (
-        (df["Ticker"] == ticker)
-        & (df["Date"] >= entry_date)
-        & (df["Date"] <= exit_date)
-    )
+def _next_trading_day(dates: List[pd.Timestamp], current: pd.Timestamp) -> Optional[pd.Timestamp]:
+    """Return the next trading day after `current`, or None."""
+    for d in dates:
+        if d > current:
+            return d
+    return None
+
+
+def _price_path(df: pd.DataFrame, ticker: str,
+                entry_date: pd.Timestamp, exit_date: pd.Timestamp) -> List:
+    mask = ((df["Ticker"] == ticker) & (df["Date"] >= entry_date)
+            & (df["Date"] <= exit_date))
     rows = df.loc[mask].sort_values("Date")
     result = []
     for _, r in rows.iterrows():
-        result.append([
-            str(r["Date"].date()),
-            float(r["Open"]),
-            float(r["High"]),
-            float(r["Low"]),
-            float(r["Close"]),
-        ])
+        result.append([str(r["Date"].date()), float(r["Open"]),
+                       float(r["High"]), float(r["Low"]), float(r["Close"])])
     return result
+
+
+# ── Exit check helpers (exec-mode aware) ────────────────────────────────────
+
+def _check_exit_close(ohlc: dict, entry_price: float,
+                      tp_pct: float, sl_pct: float) -> Optional[Tuple[float, str]]:
+    """Check TP/SL at closing price. Returns (exit_price, reason) or None."""
+    price = ohlc["close"]
+    pnl = (price - entry_price) / entry_price * 100.0
+    if pnl >= tp_pct:
+        return (price, "take_profit")
+    if pnl <= -sl_pct:
+        return (price, "stop_loss")
+    return None
+
+
+def _check_exit_open(ohlc: dict, entry_price: float,
+                     tp_pct: float, sl_pct: float) -> Optional[Tuple[float, str]]:
+    """Check TP/SL at opening price. Returns (exit_price, reason) or None."""
+    price = ohlc["open"]
+    pnl = (price - entry_price) / entry_price * 100.0
+    if pnl >= tp_pct:
+        return (price, "take_profit")
+    if pnl <= -sl_pct:
+        return (price, "stop_loss")
+    return None
+
+
+def _check_exit_intraday(ohlc: dict, entry_price: float,
+                         tp_pct: float, sl_pct: float) -> Optional[Tuple[float, str]]:
+    """
+    Check if TP or SL level was within the day's High-Low range.
+    If so, assume execution at that level (intraday fill).
+
+    Priority: TP first (optimistic — assume you took profit when available),
+    then SL. Falls back to None if neither level was reachable.
+    """
+    tp_level = entry_price * (1 + tp_pct / 100.0)
+    sl_level = entry_price * (1 - sl_pct / 100.0)
+
+    if ohlc["high"] >= tp_level:
+        return (tp_level, "take_profit")
+    if ohlc["low"] <= sl_level:
+        return (sl_level, "stop_loss")
+    return None
 
 
 # ── Main backtest loop ─────────────────────────────────────────────────────
@@ -170,41 +193,30 @@ def run_backtest(
     position_size_pct: float = 20.0,
     min_dollar_volume_m: float = 10.0,
     max_hold_days: int = 0,
+    exec_mode: str = "close",
     windows: Optional[Dict[str, int]] = None,
 ) -> Dict:
     """
-    Run a multi-strategy momentum backtest with liquidity filter and
-    controlled position sizing.
+    Run a multi-strategy momentum backtest.
 
     Parameters
     ----------
-    df : pd.DataFrame
-        Historical data with columns Date, Ticker, Close, Volume.
-    initial_capital : float
-        Total cash — split equally across window strategies.
-    take_profit_pct : float
-        Exit when unrealised gain ≥ this %.
-    stop_loss_pct : float
-        Exit when unrealised loss ≤ -this %.
-    backtest_days : int
-        Number of calendar days to simulate.
-    position_size_pct : float
-        Percentage of available cash to deploy per trade (e.g. 20).
-        The rest stays as cash reserve.  100 = all-in (old behaviour).
-    min_dollar_volume_m : float
-        Minimum average daily dollar-volume in $M.  Stocks below this
-        are excluded from the top-gainer selection.  Set to 0 to disable.
-    windows : dict | None
-        Window label → calendar days.
-
-    Returns
-    -------
-    dict  strategies, summary, config
+    exec_mode : str
+        'close'    — signal & execute at daily closing price.
+        'open'     — signal at close, execute at NEXT day's open.
+        'intraday' — signal at close, enter at next open, exit checks
+                     intraday OHLC for TP/SL crossing first; falls back
+                     to close-based check for time_stop / end_of_period.
     """
     if windows is None:
         windows = WINDOWS
 
+    exec_mode = exec_mode.lower()
+    if exec_mode not in ("close", "open", "intraday"):
+        raise ValueError(f"Unknown exec_mode '{exec_mode}'. Choose: close, open, intraday")
+
     min_dollar_volume = min_dollar_volume_m * 1_000_000
+    size_factor = max(0.01, min(1.0, position_size_pct / 100.0))
 
     df = df.copy()
     df["Date"] = pd.to_datetime(df["Date"])
@@ -212,59 +224,90 @@ def run_backtest(
         df["Date"] = df["Date"].dt.tz_localize(None)
 
     all_dates = sorted(df["Date"].unique())
-    today = df["Date"].max()
-    backtest_start = today - pd.Timedelta(days=backtest_days)
+    last_data_date = df["Date"].max()
+    backtest_start = last_data_date - pd.Timedelta(days=backtest_days)
 
     trading_days = [d for d in all_dates if d >= backtest_start]
     if len(trading_days) < 5:
-        raise ValueError(f"Not enough trading days in backtest window (found {len(trading_days)})")
+        raise ValueError(f"Not enough trading days (found {len(trading_days)})")
 
     capital_per_strat = initial_capital / len(windows)
-
-    # Position size factor: 1.0 = all-in, 0.2 = 20% per trade
-    size_factor = max(0.01, min(1.0, position_size_pct / 100.0))
 
     states: Dict[str, StrategyState] = {}
     for label in windows:
         states[label] = StrategyState(cash=capital_per_strat)
 
-    # ── Walk forward ────────────────────────────────────────────────────
+    # ── Walk forward day by day ─────────────────────────────────────────
     for day in trading_days:
         for label, window_days in windows.items():
             st = states[label]
 
-            # --- 1. Check existing position P&L ---
-            if st.position_ticker is not None:
-                cur_price = _get_close(df, st.position_ticker, day)
-                if cur_price is not None and st.entry_price > 0:
-                    pnl_pct = (cur_price - st.entry_price) / st.entry_price * 100.0
-                    hold_days = (day - st.entry_date).days
+            # ============================================================
+            # 0. Process pending entry (open / intraday modes)
+            # ============================================================
+            if exec_mode in ("open", "intraday") and st.pending_ticker is not None:
+                ohlc = _get_ohlc(df, st.pending_ticker, day)
+                if ohlc is not None:
+                    price = ohlc["open"]
+                    invest = st.cash * size_factor
+                    st.shares = invest / price
+                    st.position_ticker = st.pending_ticker
+                    st.entry_price = price
+                    st.entry_date = day
+                    st.invested_amount = invest
+                    st.entry_gain_pct = round(st.pending_gain_pct, 2)
+                    st.entry_avg_vol = st.pending_avg_vol
+                    st.exec_type = exec_mode
+                    st.cash -= invest
+                st.pending_ticker = None
+                st.pending_gain_pct = 0.0
+                st.pending_avg_vol = 0.0
 
-                    should_sell = False
+            # ============================================================
+            # 1. Check existing position P&L
+            # ============================================================
+            if st.position_ticker is not None:
+                ohlc = _get_ohlc(df, st.position_ticker, day)
+                if ohlc is not None and st.entry_price > 0:
+                    hold_days = (day - st.entry_date).days
+                    exit_info = None
+                    exit_price = ohlc["close"]
                     reason = "open"
-                    if pnl_pct >= take_profit_pct:
+
+                    if exec_mode == "close":
+                        exit_info = _check_exit_close(ohlc, st.entry_price, take_profit_pct, stop_loss_pct)
+                    elif exec_mode == "open":
+                        exit_info = _check_exit_open(ohlc, st.entry_price, take_profit_pct, stop_loss_pct)
+                    elif exec_mode == "intraday":
+                        # Intraday exit: check if TP/SL was reachable during the day
+                        exit_info = _check_exit_intraday(ohlc, st.entry_price, take_profit_pct, stop_loss_pct)
+                        if exit_info is None:
+                            # Not hit intraday — fall back to close check for TP/SL/time
+                            exit_info = _check_exit_close(ohlc, st.entry_price, take_profit_pct, stop_loss_pct)
+
+                    if exit_info is not None:
+                        exit_price, reason = exit_info
                         should_sell = True
-                        reason = "take_profit"
-                    elif pnl_pct <= -stop_loss_pct:
-                        should_sell = True
-                        reason = "stop_loss"
-                    elif max_hold_days > 0 and hold_days >= max_hold_days:
+                    else:
+                        should_sell = False
+
+                    # Time-stop (always checked regardless of exec mode)
+                    if not should_sell and max_hold_days > 0 and hold_days >= max_hold_days:
                         should_sell = True
                         reason = "time_stop"
+                        exit_price = ohlc["close"]
 
                     if should_sell:
-                        proceeds = st.shares * cur_price
+                        proceeds = st.shares * exit_price
                         trade = Trade(
-                            strategy=label,
-                            ticker=st.position_ticker,
-                            entry_date=st.entry_date,        # type: ignore[arg-type]
-                            entry_price=st.entry_price,
+                            strategy=label, ticker=st.position_ticker,
+                            entry_date=st.entry_date, entry_price=st.entry_price,  # type: ignore[arg-type]
                             capital_used=round(st.invested_amount, 2),
                             entry_gain_pct=st.entry_gain_pct,
                             entry_avg_vol=st.entry_avg_vol,
-                            exit_date=day,
-                            exit_price=cur_price,
-                            pnl_pct=round(pnl_pct, 2),
+                            exec_type=st.exec_type,
+                            exit_date=day, exit_price=exit_price,
+                            pnl_pct=round((exit_price - st.entry_price) / st.entry_price * 100, 2),
                             exit_reason=reason,
                             price_path=_price_path(df, st.position_ticker, st.entry_date, day),  # type: ignore[arg-type]
                         )
@@ -274,31 +317,46 @@ def run_backtest(
                         st.entry_price = 0.0
                         st.entry_gain_pct = 0.0
                         st.entry_avg_vol = 0.0
+                        st.exec_type = "close"
                         st.entry_date = None
                         st.shares = 0.0
                         st.invested_amount = 0.0
 
-            # --- 2. If no position, try to enter ---
+            # ============================================================
+            # 2. Compute signal & try to enter
+            # ============================================================
             if st.position_ticker is None and st.cash > 0:
                 top_result = _top_gainer(df, day, window_days, min_dollar_volume)
                 if top_result is not None:
                     top_ticker, entry_gain, entry_vol = top_result
-                    price = _get_close(df, top_ticker, day)
-                    if price is not None and price > 0:
-                        invest = st.cash * size_factor
-                        st.shares = invest / price
-                        st.position_ticker = top_ticker
-                        st.entry_price = price
-                        st.entry_date = day
-                        st.invested_amount = invest
-                        st.entry_gain_pct = round(entry_gain, 2)
-                        st.entry_avg_vol = entry_vol
-                        st.cash -= invest
 
-            # --- 3. Record equity (mark-to-market) ---
+                    if exec_mode == "close":
+                        # Enter immediately at today's close
+                        ohlc = _get_ohlc(df, top_ticker, day)
+                        if ohlc is not None:
+                            price = ohlc["close"]
+                            invest = st.cash * size_factor
+                            st.shares = invest / price
+                            st.position_ticker = top_ticker
+                            st.entry_price = price
+                            st.entry_date = day
+                            st.invested_amount = invest
+                            st.entry_gain_pct = round(entry_gain, 2)
+                            st.entry_avg_vol = entry_vol
+                            st.exec_type = "close"
+                            st.cash -= invest
+                    else:
+                        # open / intraday: queue entry at next day's open
+                        st.pending_ticker = top_ticker
+                        st.pending_gain_pct = entry_gain
+                        st.pending_avg_vol = entry_vol
+
+            # ============================================================
+            # 3. Record equity (mark-to-market at close)
+            # ============================================================
             if st.position_ticker is not None:
-                mark_price = _get_close(df, st.position_ticker, day)
-                equity = st.cash + (st.shares * mark_price if mark_price else 0)
+                ohlc = _get_ohlc(df, st.position_ticker, day)
+                equity = st.cash + (st.shares * ohlc["close"] if ohlc else 0)
             else:
                 equity = st.cash
             st.equity_curve.append((day, equity))
@@ -307,33 +365,28 @@ def run_backtest(
     last_day = trading_days[-1]
     for label in windows:
         st = states[label]
+        # Flush any unexecuted pending entry
+        st.pending_ticker = None
+
         if st.position_ticker is not None:
-            cur_price = _get_close(df, st.position_ticker, last_day)
-            if cur_price is None:
-                cur_price = st.entry_price
+            ohlc = _get_ohlc(df, st.position_ticker, last_day)
+            cur_price = ohlc["close"] if ohlc else st.entry_price
             pnl_pct = ((cur_price - st.entry_price) / st.entry_price * 100.0) if st.entry_price > 0 else 0.0
             proceeds = st.shares * cur_price
             trade = Trade(
-                strategy=label,
-                ticker=st.position_ticker,
-                entry_date=st.entry_date,        # type: ignore[arg-type]
-                entry_price=st.entry_price,
+                strategy=label, ticker=st.position_ticker,
+                entry_date=st.entry_date, entry_price=st.entry_price,  # type: ignore[arg-type]
                 capital_used=round(st.invested_amount, 2),
                 entry_gain_pct=st.entry_gain_pct,
                 entry_avg_vol=st.entry_avg_vol,
-                exit_date=last_day,
-                exit_price=cur_price,
-                pnl_pct=round(pnl_pct, 2),
-                exit_reason="end_of_period",
+                exec_type=st.exec_type,
+                exit_date=last_day, exit_price=cur_price,
+                pnl_pct=round(pnl_pct, 2), exit_reason="end_of_period",
                 price_path=_price_path(df, st.position_ticker, st.entry_date, last_day),  # type: ignore[arg-type]
             )
             st.trades.append(trade)
             st.cash += proceeds
             st.position_ticker = None
-            st.entry_price = 0.0
-            st.entry_date = None
-            st.shares = 0.0
-            st.invested_amount = 0.0
 
     # ── Build results ───────────────────────────────────────────────────
     strategy_results = {}
@@ -343,7 +396,8 @@ def run_backtest(
 
     for label in windows:
         st = states[label]
-        final_eq = st.cash if st.cash > 0 else (st.equity_curve[-1][1] if st.equity_curve else capital_per_strat)
+        final_eq = st.cash if st.cash > 0 else (
+            st.equity_curve[-1][1] if st.equity_curve else capital_per_strat)
         total_final += final_eq
 
         wins = [t for t in st.trades if t.exit_reason == "take_profit"]
@@ -363,15 +417,12 @@ def run_backtest(
             "final_equity": round(final_eq, 2),
             "return_pct": round((final_eq - capital_per_strat) / capital_per_strat * 100, 2),
             "total_trades": len(st.trades),
-            "take_profits": len(wins),
-            "stop_losses": len(losses),
-            "time_stops": len(time_stops),
-            "end_of_period": len(eop),
+            "take_profits": len(wins), "stop_losses": len(losses),
+            "time_stops": len(time_stops), "end_of_period": len(eop),
             "avg_return_pct": round(avg_return, 2),
             "best_trade_pct": round(best_trade, 2),
             "worst_trade_pct": round(worst_trade, 2),
-            "trades": st.trades,
-            "equity_curve": st.equity_curve,
+            "trades": st.trades, "equity_curve": st.equity_curve,
         }
 
     overall_return = round((total_final - initial_capital) / initial_capital * 100, 2)
@@ -396,6 +447,7 @@ def run_backtest(
             "backtest_days": backtest_days,
             "position_size_pct": position_size_pct,
             "min_dollar_volume_m": min_dollar_volume_m,
+            "exec_mode": exec_mode,
             "windows": windows,
         },
     }

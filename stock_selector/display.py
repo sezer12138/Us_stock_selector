@@ -187,7 +187,14 @@ def print_backtest_results(bt_results: Dict) -> None:
     print(f"  Total return    : {color} {summary['total_return_pct']:+.2f}%")
     print(f"  Total trades    : {summary['total_trades']}")
     print(f"  Win rate        : {summary['win_rate_pct']:.1f}%")
-    print(f"  Rules           : buy top-1 gainer, sell at +{config['take_profit_pct']}% / -{config['stop_loss_pct']}%")
+    pos_pct = config.get("position_size_pct", 100)
+    min_vol = config.get("min_dollar_volume_m", 0)
+    rules_parts = [f"buy top-1 gainer"]
+    if min_vol > 0:
+        rules_parts.append(f"min vol ≥${min_vol}M/day")
+    rules_parts.append(f"{pos_pct:.0f}% capital/trade")
+    rules_parts.append(f"sell +{config['take_profit_pct']}% / -{config['stop_loss_pct']}%")
+    print(f"  Rules           : {', '.join(rules_parts)}")
     print()
 
     # ── Per-strategy summary table ──
@@ -227,11 +234,12 @@ def print_backtest_results(bt_results: Dict) -> None:
             exit_d = t.exit_date.strftime("%m/%d") if t.exit_date and hasattr(t.exit_date, 'strftime') else (str(t.exit_date)[:10] if t.exit_date else "—")
             pnl_str = f"{t.pnl_pct:+.2f}%" if t.pnl_pct is not None else "—"
             icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪"}.get(t.exit_reason, "")
+            cap = f"${t.capital_used:,.0f}" if hasattr(t, 'capital_used') else "—"
             trade_rows.append([i, t.ticker, entry_d, f"${t.entry_price:,.2f}",
                               exit_d, f"${t.exit_price:,.2f}" if t.exit_price else "—",
-                              pnl_str, f"{icon} {t.exit_reason}"])
+                              pnl_str, cap, f"{icon} {t.exit_reason}"])
         print(tabulate(trade_rows,
-                       headers=["#", "Ticker", "Entry", "Price", "Exit", "Price", "P&L", "Reason"],
+                       headers=["#", "Ticker", "Entry", "Price", "Exit", "Price", "P&L", "Capital", "Reason"],
                        tablefmt="simple", numalign="right", stralign="left"))
         print()
 
@@ -289,16 +297,18 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
             exit_d = t.exit_date.strftime("%m/%d") if t.exit_date and hasattr(t.exit_date, 'strftime') else "—"
             pnl_cls = "pos" if (t.pnl_pct or 0) >= 0 else "neg"
             icon = {"take_profit": "🟢", "stop_loss": "🔴", "end_of_period": "⚪️"}.get(t.exit_reason, "")
+            cap_str = f"${t.capital_used:,.0f}" if hasattr(t, 'capital_used') else "—"
             trows += f"""<tr>
                 <td class="rank">{i}</td><td class="ticker">{t.ticker}</td>
                 <td>{entry_d}</td><td>${t.entry_price:,.2f}</td>
                 <td>{exit_d}</td><td>${t.exit_price:,.2f}</td>
                 <td class="{pnl_cls}">{t.pnl_pct:+.2f}%</td>
+                <td>{cap_str}</td>
                 <td>{icon} {t.exit_reason}</td>
             </tr>"""
         trade_sections += f"""<div class="window-section">
             <h2>{label.upper()} Strategy <span class="subtitle">Trade Log</span></h2>
-            <table><thead><tr><th>#</th><th>Ticker</th><th>Entry</th><th>Price</th><th>Exit</th><th>Price</th><th>P&L</th><th>Reason</th></tr></thead>
+            <table><thead><tr><th>#</th><th>Ticker</th><th>Entry</th><th>Price</th><th>Exit</th><th>Price</th><th>P&L</th><th>Capital</th><th>Reason</th></tr></thead>
             <tbody>{trows}</tbody></table></div>"""
 
     html = f"""<!DOCTYPE html>

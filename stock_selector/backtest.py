@@ -2,22 +2,25 @@
 Backtesting engine for momentum-based stock selection strategies.
 
 Simulates paper trading over a historical period: each day, buys the
-top-1 price-gainer over a given lookback window, and exits when the
-position hits +10% take-profit or -5% stop-loss.
+top-1 price-gainer over a given lookback window (filtered by minimum
+daily dollar-volume for liquidity), and exits when the position hits
+take-profit or stop-loss thresholds.
+
+Each trade risks only a configurable percentage of available capital
+(e.g. 20%), leaving the rest as cash reserve — realistic position sizing
+rather than all-in bets.
 
 Supports five independent window strategies: 3d, 7d, 14d, 21d, 30d.
 """
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from .screener import WINDOWS
 
-# ── Suppress noise ────────────────────────────────────────────────────────
 logging.getLogger("yfinance").setLevel(logging.ERROR)
 
 
@@ -29,35 +32,57 @@ class Trade:
     ticker: str
     entry_date: pd.Timestamp
     entry_price: float
+    capital_used: float          # how much cash was deployed for this trade
     exit_date: Optional[pd.Timestamp] = None
     exit_price: Optional[float] = None
     pnl_pct: Optional[float] = None
-    exit_reason: str = "open"          # take_profit | stop_loss | end_of_period | open
+    exit_reason: str = "open"
 
 
 @dataclass
 class StrategyState:
-    """Mutable state for one window-strategy during the backtest walk-forward."""
-    cash: float
+    """Mutable state for one window-strategy during the walk-forward."""
+    cash: float                   # total available buying power (invested + reserve)
     position_ticker: Optional[str] = None
     entry_price: float = 0.0
     entry_date: Optional[pd.Timestamp] = None
     shares: float = 0.0
+    invested_amount: float = 0.0  # cash locked in current position
     trades: List[Trade] = field(default_factory=list)
     equity_curve: List[Tuple[pd.Timestamp, float]] = field(default_factory=list)
 
 
 # ── Core helpers ───────────────────────────────────────────────────────────
 
+def _dollar_volume(
+    df: pd.DataFrame,
+    ticker: str,
+    today: pd.Timestamp,
+    window_days: int,
+) -> Optional[float]:
+    """Average daily dollar-volume (Close × Volume) for `ticker` over `window_days`."""
+    cutoff = today - pd.Timedelta(days=window_days)
+    mask = (df["Ticker"] == ticker) & (df["Date"] >= cutoff) & (df["Date"] <= today)
+    recent = df.loc[mask]
+    if len(recent) < 2:
+        return None
+    return float((recent["Close"] * recent["Volume"]).mean())
+
+
 def _top_gainer(
     df: pd.DataFrame,
     today: pd.Timestamp,
     window_days: int,
+    min_dollar_volume: float = 0.0,
 ) -> Optional[str]:
     """
     Return the ticker with the highest price-increase % over the last
-    `window_days` calendar days, looking back from `today`.  Uses only
-    data available on or before `today` (no look-ahead).
+    `window_days` calendar days, looking back from `today`.
+
+    Stocks whose average daily dollar-volume falls below `min_dollar_volume`
+    are excluded — ensuring picks are liquid enough to actually trade.
+
+    Uses only data on or before `today` (no look-ahead).
     """
     cutoff = today - pd.Timedelta(days=window_days)
     window_data = df[(df["Date"] >= cutoff) & (df["Date"] <= today)]
@@ -67,13 +92,19 @@ def _top_gainer(
 
     gains = {}
     for ticker, group in window_data.groupby("Ticker"):
-        # Need at least 2 data points in the window
         if len(group) < 2:
             continue
         earliest = group.loc[group["Date"].idxmin()]
         latest = group.loc[group["Date"].idxmax()]
         if earliest["Close"] <= 0:
             continue
+
+        # Volume filter
+        if min_dollar_volume > 0:
+            avg_dv = (group["Close"] * group["Volume"]).mean()
+            if avg_dv < min_dollar_volume:
+                continue
+
         pct = (latest["Close"] - earliest["Close"]) / earliest["Close"] * 100.0
         gains[ticker] = pct
 
@@ -83,7 +114,6 @@ def _top_gainer(
 
 
 def _get_close(df: pd.DataFrame, ticker: str, date: pd.Timestamp) -> Optional[float]:
-    """Return the closing price of `ticker` on `date`, or None."""
     rows = df[(df["Ticker"] == ticker) & (df["Date"] == date)]
     if rows.empty:
         return None
@@ -98,61 +128,67 @@ def run_backtest(
     take_profit_pct: float = 10.0,
     stop_loss_pct: float = 5.0,
     backtest_days: int = 60,
+    position_size_pct: float = 20.0,
+    min_dollar_volume_m: float = 10.0,
     windows: Optional[Dict[str, int]] = None,
 ) -> Dict:
     """
-    Run a multi-strategy momentum backtest.
+    Run a multi-strategy momentum backtest with liquidity filter and
+    controlled position sizing.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Historical data with columns Date, Ticker, Close.  Must span
-        (max_window + backtest_days + buffer) calendar days.
+        Historical data with columns Date, Ticker, Close, Volume.
     initial_capital : float
-        Total cash allocated — split equally across window strategies.
+        Total cash — split equally across window strategies.
     take_profit_pct : float
-        Exit when unrealised gain ≥ this percentage.
+        Exit when unrealised gain ≥ this %.
     stop_loss_pct : float
-        Exit when unrealised loss ≤ -this percentage.
+        Exit when unrealised loss ≤ -this %.
     backtest_days : int
-        Number of calendar days to run the backtest over.
+        Number of calendar days to simulate.
+    position_size_pct : float
+        Percentage of available cash to deploy per trade (e.g. 20).
+        The rest stays as cash reserve.  100 = all-in (old behaviour).
+    min_dollar_volume_m : float
+        Minimum average daily dollar-volume in $M.  Stocks below this
+        are excluded from the top-gainer selection.  Set to 0 to disable.
     windows : dict | None
-        Window label → calendar days.  Defaults to 3d/7d/14d/21d/30d.
+        Window label → calendar days.
 
     Returns
     -------
-    dict with keys:
-        strategies  — per-window strategy results (trades, equity curve, final equity)
-        summary     — combined P&L across all strategies
-        config      — parameters used
+    dict  strategies, summary, config
     """
     if windows is None:
         windows = WINDOWS
+
+    min_dollar_volume = min_dollar_volume_m * 1_000_000
 
     df = df.copy()
     df["Date"] = pd.to_datetime(df["Date"])
     if df["Date"].dt.tz is not None:
         df["Date"] = df["Date"].dt.tz_localize(None)
 
-    # Determine backtest date range
     all_dates = sorted(df["Date"].unique())
     today = df["Date"].max()
     backtest_start = today - pd.Timedelta(days=backtest_days)
 
-    # Filter to dates in the backtest window
     trading_days = [d for d in all_dates if d >= backtest_start]
     if len(trading_days) < 5:
         raise ValueError(f"Not enough trading days in backtest window (found {len(trading_days)})")
 
-    # Per-strategy capital
     capital_per_strat = initial_capital / len(windows)
 
-    # Initialise state for each strategy
+    # Position size factor: 1.0 = all-in, 0.2 = 20% per trade
+    size_factor = max(0.01, min(1.0, position_size_pct / 100.0))
+
     states: Dict[str, StrategyState] = {}
     for label in windows:
         states[label] = StrategyState(cash=capital_per_strat)
 
-    # ── Walk forward day by day ─────────────────────────────────────────
+    # ── Walk forward ────────────────────────────────────────────────────
     for day in trading_days:
         for label, window_days in windows.items():
             st = states[label]
@@ -173,40 +209,44 @@ def run_backtest(
                         reason = "stop_loss"
 
                     if should_sell:
-                        exit_value = st.shares * cur_price
+                        proceeds = st.shares * cur_price
                         trade = Trade(
                             strategy=label,
                             ticker=st.position_ticker,
-                            entry_date=st.entry_date,       # type: ignore[arg-type]
+                            entry_date=st.entry_date,        # type: ignore[arg-type]
                             entry_price=st.entry_price,
+                            capital_used=round(st.invested_amount, 2),
                             exit_date=day,
                             exit_price=cur_price,
                             pnl_pct=round(pnl_pct, 2),
                             exit_reason=reason,
                         )
                         st.trades.append(trade)
-                        st.cash = exit_value
+                        st.cash += proceeds                    # add back to reserve
                         st.position_ticker = None
                         st.entry_price = 0.0
                         st.entry_date = None
                         st.shares = 0.0
+                        st.invested_amount = 0.0
 
             # --- 2. If no position, try to enter ---
             if st.position_ticker is None and st.cash > 0:
-                top = _top_gainer(df, day, window_days)
+                top = _top_gainer(df, day, window_days, min_dollar_volume)
                 if top is not None:
                     price = _get_close(df, top, day)
                     if price is not None and price > 0:
-                        st.shares = st.cash / price
+                        invest = st.cash * size_factor
+                        st.shares = invest / price
                         st.position_ticker = top
                         st.entry_price = price
                         st.entry_date = day
-                        st.cash = 0.0
+                        st.invested_amount = invest
+                        st.cash -= invest
 
-            # --- 3. Record equity ---
+            # --- 3. Record equity (mark-to-market) ---
             if st.position_ticker is not None:
                 mark_price = _get_close(df, st.position_ticker, day)
-                equity = st.shares * mark_price if mark_price else st.cash
+                equity = st.cash + (st.shares * mark_price if mark_price else 0)
             else:
                 equity = st.cash
             st.equity_curve.append((day, equity))
@@ -217,27 +257,28 @@ def run_backtest(
         st = states[label]
         if st.position_ticker is not None:
             cur_price = _get_close(df, st.position_ticker, last_day)
-            if cur_price is not None and st.entry_price > 0:
-                pnl_pct = (cur_price - st.entry_price) / st.entry_price * 100.0
-            else:
-                pnl_pct = 0.0
+            if cur_price is None:
                 cur_price = st.entry_price
+            pnl_pct = ((cur_price - st.entry_price) / st.entry_price * 100.0) if st.entry_price > 0 else 0.0
+            proceeds = st.shares * cur_price
             trade = Trade(
                 strategy=label,
                 ticker=st.position_ticker,
-                entry_date=st.entry_date,       # type: ignore[arg-type]
+                entry_date=st.entry_date,        # type: ignore[arg-type]
                 entry_price=st.entry_price,
+                capital_used=round(st.invested_amount, 2),
                 exit_date=last_day,
                 exit_price=cur_price,
                 pnl_pct=round(pnl_pct, 2),
                 exit_reason="end_of_period",
             )
             st.trades.append(trade)
-            st.cash = st.shares * cur_price
+            st.cash += proceeds
             st.position_ticker = None
             st.entry_price = 0.0
             st.entry_date = None
             st.shares = 0.0
+            st.invested_amount = 0.0
 
     # ── Build results ───────────────────────────────────────────────────
     strategy_results = {}
@@ -295,6 +336,8 @@ def run_backtest(
             "take_profit_pct": take_profit_pct,
             "stop_loss_pct": stop_loss_pct,
             "backtest_days": backtest_days,
+            "position_size_pct": position_size_pct,
+            "min_dollar_volume_m": min_dollar_volume_m,
             "windows": windows,
         },
     }

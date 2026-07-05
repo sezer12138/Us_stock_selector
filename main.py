@@ -82,9 +82,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bt-capital", type=float, default=50000.0,
                         help="Initial capital for backtest (default: 50000)")
     parser.add_argument("--bt-tp", type=float, default=10.0,
-                        help="Take-profit % (default: 10)")
+                        help="Take-profit %% (default: 10)")
     parser.add_argument("--bt-sl", type=float, default=5.0,
-                        help="Stop-loss % (default: 5)")
+                        help="Stop-loss %% (default: 5)")
+    parser.add_argument("--bt-position-pct", type=float, default=20.0,
+                        help="%% of capital to deploy per trade (default: 20)")
+    parser.add_argument("--bt-min-vol", type=float, default=10.0,
+                        help="Min avg daily dollar-volume in $M (default: 10, 0=disable)")
     return parser.parse_args()
 
 
@@ -139,6 +143,8 @@ def main() -> None:
             take_profit_pct=args.bt_tp,
             stop_loss_pct=args.bt_sl,
             backtest_days=args.bt_days,
+            position_size_pct=args.bt_position_pct,
+            min_dollar_volume_m=args.bt_min_vol,
             windows={k: v for k, v in WINDOWS.items() if v <= args.max_window},
         )
 

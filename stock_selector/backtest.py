@@ -33,11 +33,13 @@ class Trade:
     entry_date: pd.Timestamp
     entry_price: float
     capital_used: float          # how much cash was deployed for this trade
+    entry_gain_pct: float = 0.0  # price increase % over the window at entry
+    entry_avg_vol: float = 0.0   # avg daily dollar-volume at entry
     exit_date: Optional[pd.Timestamp] = None
     exit_price: Optional[float] = None
     pnl_pct: Optional[float] = None
     exit_reason: str = "open"          # take_profit | stop_loss | time_stop | end_of_period
-    # List of (date_str, close_price) for sparkline rendering
+    # List of [date_str, open, high, low, close] for K-line rendering
     price_path: List = field(default_factory=list)
 
 
@@ -48,6 +50,8 @@ class StrategyState:
     position_ticker: Optional[str] = None
     entry_price: float = 0.0
     entry_date: Optional[pd.Timestamp] = None
+    entry_gain_pct: float = 0.0   # gain % at time of entry
+    entry_avg_vol: float = 0.0    # avg daily dollar-volume at entry
     shares: float = 0.0
     invested_amount: float = 0.0  # cash locked in current position
     trades: List[Trade] = field(default_factory=list)
@@ -76,13 +80,13 @@ def _top_gainer(
     today: pd.Timestamp,
     window_days: int,
     min_dollar_volume: float = 0.0,
-) -> Optional[str]:
+) -> Optional[Tuple[str, float, float]]:
     """
-    Return the ticker with the highest price-increase % over the last
-    `window_days` calendar days, looking back from `today`.
+    Return (ticker, gain_pct, avg_dollar_volume) for the stock with the
+    highest price-increase % over the last `window_days` calendar days.
 
     Stocks whose average daily dollar-volume falls below `min_dollar_volume`
-    are excluded — ensuring picks are liquid enough to actually trade.
+    are excluded.
 
     Uses only data on or before `today` (no look-ahead).
     """
@@ -92,7 +96,10 @@ def _top_gainer(
     if window_data.empty:
         return None
 
-    gains = {}
+    best_ticker = None
+    best_gain = -float("inf")
+    best_vol = 0.0
+
     for ticker, group in window_data.groupby("Ticker"):
         if len(group) < 2:
             continue
@@ -101,18 +108,20 @@ def _top_gainer(
         if earliest["Close"] <= 0:
             continue
 
-        # Volume filter
-        if min_dollar_volume > 0:
-            avg_dv = (group["Close"] * group["Volume"]).mean()
-            if avg_dv < min_dollar_volume:
-                continue
+        avg_dv = (group["Close"] * group["Volume"]).mean()
+
+        if min_dollar_volume > 0 and avg_dv < min_dollar_volume:
+            continue
 
         pct = (latest["Close"] - earliest["Close"]) / earliest["Close"] * 100.0
-        gains[ticker] = pct
+        if pct > best_gain:
+            best_gain = pct
+            best_ticker = ticker
+            best_vol = avg_dv
 
-    if not gains:
+    if best_ticker is None:
         return None
-    return max(gains, key=gains.get)
+    return (best_ticker, best_gain, best_vol)
 
 
 def _get_close(df: pd.DataFrame, ticker: str, date: pd.Timestamp) -> Optional[float]:
@@ -251,6 +260,8 @@ def run_backtest(
                             entry_date=st.entry_date,        # type: ignore[arg-type]
                             entry_price=st.entry_price,
                             capital_used=round(st.invested_amount, 2),
+                            entry_gain_pct=st.entry_gain_pct,
+                            entry_avg_vol=st.entry_avg_vol,
                             exit_date=day,
                             exit_price=cur_price,
                             pnl_pct=round(pnl_pct, 2),
@@ -258,25 +269,30 @@ def run_backtest(
                             price_path=_price_path(df, st.position_ticker, st.entry_date, day),  # type: ignore[arg-type]
                         )
                         st.trades.append(trade)
-                        st.cash += proceeds                    # add back to reserve
+                        st.cash += proceeds
                         st.position_ticker = None
                         st.entry_price = 0.0
+                        st.entry_gain_pct = 0.0
+                        st.entry_avg_vol = 0.0
                         st.entry_date = None
                         st.shares = 0.0
                         st.invested_amount = 0.0
 
             # --- 2. If no position, try to enter ---
             if st.position_ticker is None and st.cash > 0:
-                top = _top_gainer(df, day, window_days, min_dollar_volume)
-                if top is not None:
-                    price = _get_close(df, top, day)
+                top_result = _top_gainer(df, day, window_days, min_dollar_volume)
+                if top_result is not None:
+                    top_ticker, entry_gain, entry_vol = top_result
+                    price = _get_close(df, top_ticker, day)
                     if price is not None and price > 0:
                         invest = st.cash * size_factor
                         st.shares = invest / price
-                        st.position_ticker = top
+                        st.position_ticker = top_ticker
                         st.entry_price = price
                         st.entry_date = day
                         st.invested_amount = invest
+                        st.entry_gain_pct = round(entry_gain, 2)
+                        st.entry_avg_vol = entry_vol
                         st.cash -= invest
 
             # --- 3. Record equity (mark-to-market) ---
@@ -303,6 +319,8 @@ def run_backtest(
                 entry_date=st.entry_date,        # type: ignore[arg-type]
                 entry_price=st.entry_price,
                 capital_used=round(st.invested_amount, 2),
+                entry_gain_pct=st.entry_gain_pct,
+                entry_avg_vol=st.entry_avg_vol,
                 exit_date=last_day,
                 exit_price=cur_price,
                 pnl_pct=round(pnl_pct, 2),

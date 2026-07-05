@@ -344,6 +344,12 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
             icon = {"take_profit": "🟢", "stop_loss": "🔴", "time_stop": "⏰", "end_of_period": "⚪️"}.get(t.exit_reason, "")
             cap_str = f"${cap:,.0f}" if cap else "—"
 
+            # Entry metrics (gain % and volume that triggered this trade)
+            entry_gain = getattr(t, 'entry_gain_pct', 0) or 0
+            entry_vol = getattr(t, 'entry_avg_vol', 0) or 0
+            entry_gain_str = f"{entry_gain:+.2f}%" if entry_gain else "—"
+            entry_vol_str = f"${entry_vol/1e6:,.0f}M" if entry_vol else "—"
+
             # K-line candlestick chart
             price_path = getattr(t, 'price_path', [])
             kline = _kline_svg(
@@ -354,6 +360,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
             trows += f"""<tr>
                 <td class="rank">{i}</td><td class="ticker">{t.ticker}</td>
                 <td>{entry_d}</td><td>${t.entry_price:,.2f}</td>
+                <td>{entry_gain_str}</td><td>{entry_vol_str}</td>
                 <td>{exit_d}</td><td>${t.exit_price:,.2f}</td>
                 <td>{hold_days}</td>
                 <td class="{pnl_cls}">{t.pnl_pct:+.2f}%</td>
@@ -363,8 +370,8 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
                 <td>{icon} {t.exit_reason}</td>
             </tr>"""
         trade_sections += f"""<div class="window-section">
-            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · daily candlestick charts (K-line)</span></h2>
-            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Daily K-line Chart</th><th>Reason</th></tr></thead>
+            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · entry metrics show the gain & volume that triggered the trade</span></h2>
+            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Entry Gain</th><th>Entry Vol</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Daily K-line Chart</th><th>Reason</th></tr></thead>
             <tbody>{trows}</tbody></table></div>"""
 
     pos_pct_html = config.get("position_size_pct", 100)

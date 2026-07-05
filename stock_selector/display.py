@@ -369,9 +369,10 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".") -> str:
                 <td class="chart-cell">{kline}</td>
                 <td>{icon} {t.exit_reason}</td>
             </tr>"""
+        num_days = label.rstrip("d")
         trade_sections += f"""<div class="window-section">
-            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · entry metrics show the gain & volume that triggered the trade</span></h2>
-            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Entry Gain</th><th>Entry Vol</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Daily K-line Chart</th><th>Reason</th></tr></thead>
+            <h2>{label.upper()} Strategy <span class="subtitle">Trade Log · Gain & Vol are over the {num_days}-day window at entry</span></h2>
+            <table><thead><tr><th>#</th><th>Ticker</th><th>Buy Date</th><th>Buy Close</th><th>Gain ({label})</th><th>Vol ({label})</th><th>Sell Date</th><th>Sell Close</th><th>Days</th><th>P&L%</th><th>P&L$</th><th>Capital</th><th>Daily K-line Chart</th><th>Reason</th></tr></thead>
             <tbody>{trows}</tbody></table></div>"""
 
     pos_pct_html = config.get("position_size_pct", 100)

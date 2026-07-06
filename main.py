@@ -223,22 +223,46 @@ def main() -> None:
         tag = args.universe.upper() if args.universe != "both" else "S&P 500 + NASDAQ-100"
         print(f"Universe: {tag} ({len(tickers)} tickers)")
 
+    # Always include QQQ and SPY for benchmark comparison in backtest mode
+    benchmark_tickers = ["QQQ", "SPY"]
+    all_tickers = tickers + [t for t in benchmark_tickers if t not in tickers]
+
     # ── Data fetch ──────────────────────────────────────────────────────
     if args.backtest:
         lookback = args.max_window + args.bt_days + 20
     else:
         lookback = args.max_window
 
-    print(f"\nDownloading data for {len(tickers)} tickers ({lookback}d lookback)...")
+    print(f"\nDownloading data for {len(all_tickers)} tickers ({lookback}d lookback)...")
     print("This may take a minute or two.\n")
 
-    df = fetch_historical_data(tickers, lookback_days=lookback, progress=True)
+    df = fetch_historical_data(all_tickers, lookback_days=lookback, progress=True)
 
     if df is None or df.empty:
         print("ERROR: Could not fetch stock data.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nDownloaded {len(df)} rows across {df['Ticker'].nunique()} tickers.")
+    # Separate benchmark data from stock data
+    benchmark_df = df[df["Ticker"].isin(benchmark_tickers)].copy()
+    df = df[~df["Ticker"].isin(benchmark_tickers)].copy()
+
+    stock_count = df["Ticker"].nunique()
+    print(f"\nDownloaded {len(df)} rows across {stock_count} tickers "
+          f"(+ {benchmark_df['Ticker'].nunique()} benchmarks: QQQ, SPY).")
+
+    # ── Survivorship bias detection ──────────────────────────────────────
+    if args.backtest and not args.tickers:
+        total_dates = df["Date"].nunique()
+        if total_dates > 0:
+            coverage = df.groupby("Ticker")["Date"].nunique()
+            full_coverage = len(coverage[coverage >= total_dates * 0.8])
+            partial = stock_count - full_coverage
+            if partial > 0:
+                pct = partial / stock_count * 100
+                print(f"  ⚠  Survivorship bias: {partial}/{stock_count} tickers ({pct:.0f}%) "
+                      f"have <80% data coverage in this period.")
+                print(f"     These may be recently listed or historically absent from the index.")
+                print(f"     Backtest returns may be OVERSTATED vs a true historical simulation.")
 
     # Build base filename for reports
     base = _report_basename(args)
@@ -262,6 +286,7 @@ def main() -> None:
             max_hold_days=args.bt_max_hold,
             exec_mode=args.bt_exec,
             windows={k: v for k, v in WINDOWS.items() if v <= args.max_window},
+            benchmark_df=benchmark_df,
         )
 
         print_backtest_results(bt_results)

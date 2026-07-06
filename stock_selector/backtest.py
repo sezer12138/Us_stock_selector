@@ -182,6 +182,78 @@ def _check_exit_intraday(ohlc: dict, entry_price: float,
     return None
 
 
+# ── Benchmark helpers ─────────────────────────────────────────────────────
+
+def compute_benchmarks(
+    benchmark_df: pd.DataFrame,
+    trading_days: list,
+    backtest_start: pd.Timestamp,
+    initial_capital: float,
+) -> Dict:
+    """
+    Compute buy-and-hold equity curves for benchmark tickers (QQQ, SPY).
+
+    Parameters
+    ----------
+    benchmark_df : pd.DataFrame
+        Must have columns [Date, Ticker, Close]. Should contain QQQ and SPY.
+    trading_days : list[pd.Timestamp]
+        Sorted list of trading days in the backtest period.
+    backtest_start : pd.Timestamp
+        First trading day of the backtest.
+    initial_capital : float
+        Starting capital for the benchmark investment.
+
+    Returns
+    -------
+    dict with keys "QQQ" and "SPY", each containing:
+        return_pct, final_equity, equity_curve [(date, equity), ...]
+    """
+    benchmarks = {}
+    for ticker in ["QQQ", "SPY"]:
+        tkr_data = benchmark_df[benchmark_df["Ticker"] == ticker].sort_values("Date")
+        if tkr_data.empty:
+            continue
+
+        # Find the close price at or just before backtest_start
+        start_rows = tkr_data[tkr_data["Date"] <= backtest_start]
+        if start_rows.empty:
+            # No data before backtest start — use first available
+            start_price = tkr_data.iloc[0]["Close"]
+        else:
+            start_price = start_rows.iloc[-1]["Close"]
+
+        if start_price <= 0:
+            continue
+
+        equity_curve = []
+        # Build date → close map for efficient lookup
+        date_close = dict(zip(tkr_data["Date"], tkr_data["Close"]))
+
+        for day in trading_days:
+            close = date_close.get(day)
+            if close is None:
+                # No data for this day — carry forward last known equity
+                if equity_curve:
+                    equity_curve.append((day, equity_curve[-1][1]))
+                else:
+                    equity_curve.append((day, initial_capital))
+            else:
+                eq = initial_capital * (close / start_price)
+                equity_curve.append((day, eq))
+
+        final_eq = equity_curve[-1][1] if equity_curve else initial_capital
+        return_pct = (final_eq - initial_capital) / initial_capital * 100.0
+
+        benchmarks[ticker] = {
+            "return_pct": round(return_pct, 2),
+            "final_equity": round(final_eq, 2),
+            "equity_curve": equity_curve,
+        }
+
+    return benchmarks
+
+
 # ── Main backtest loop ─────────────────────────────────────────────────────
 
 def run_backtest(
@@ -195,6 +267,7 @@ def run_backtest(
     max_hold_days: int = 0,
     exec_mode: str = "close",
     windows: Optional[Dict[str, int]] = None,
+    benchmark_df: Optional[pd.DataFrame] = None,
 ) -> Dict:
     """
     Run a multi-strategy momentum backtest.
@@ -388,6 +461,23 @@ def run_backtest(
             st.cash += proceeds
             st.position_ticker = None
 
+    # ── Compute benchmarks (QQQ / SPY buy-and-hold) ──────────────────────
+    benchmarks = {}
+    if benchmark_df is not None and not benchmark_df.empty:
+        benchmarks = compute_benchmarks(
+            benchmark_df, trading_days, backtest_start, initial_capital,
+        )
+
+    # ── Build combined total equity curve (sum of all strategies per day) ──
+    total_equity_curve = []
+    if trading_days:
+        day_equities = {day: 0.0 for day in trading_days}
+        for label in windows:
+            for day, eq in states[label].equity_curve:
+                if day in day_equities:
+                    day_equities[day] += eq
+        total_equity_curve = [(day, day_equities[day]) for day in trading_days]
+
     # ── Build results ───────────────────────────────────────────────────
     strategy_results = {}
     total_final = 0.0
@@ -450,4 +540,6 @@ def run_backtest(
             "exec_mode": exec_mode,
             "windows": windows,
         },
+        "benchmarks": benchmarks,
+        "total_equity_curve": total_equity_curve,
     }

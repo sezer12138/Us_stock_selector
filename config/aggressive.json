@@ -1,14 +1,14 @@
 {
     "_description": "Aggressive: large position size, no vol filter, no time limit, close execution",
-    "universe": "sp500",
+    "universe": "both",
     "backtest": true,
-    "bt_days": 60,
+    "bt_days": 365,
     "bt_capital": 50000,
-    "bt_tp": 15,
-    "bt_sl": 8,
-    "bt_position_pct": 50,
-    "bt_min_vol": 0,
-    "bt_max_hold": 0,
-    "bt_exec": "close",
+    "bt_tp": 50,
+    "bt_sl": 20,
+    "bt_position_pct": 100,
+    "bt_min_vol": 10,
+    "bt_max_hold": 100,
+    "bt_exec": "intraday",
     "html": true
 }

@@ -13,7 +13,7 @@ from typing import Dict
 import pandas as pd
 from tabulate import tabulate
 
-from .screener import WindowResult, StockRank
+from .screener import WindowResult, StockRank, ORDERED_WINDOWS
 
 
 def print_rankings(results: Dict[str, WindowResult], top_n: int = 10) -> None:
@@ -24,7 +24,7 @@ def print_rankings(results: Dict[str, WindowResult], top_n: int = 10) -> None:
     print(f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 78)
 
-    for label in ["3d", "7d", "14d", "21d", "30d"]:
+    for label in ORDERED_WINDOWS:
         wr = results.get(label)
         if wr is None:
             continue
@@ -68,7 +68,7 @@ def export_csv(results: Dict[str, WindowResult], output_dir: str = ".",
     filepath = os.path.join(output_dir, filename)
 
     rows = []
-    for label in ["3d", "7d", "14d", "21d", "30d"]:
+    for label in ORDERED_WINDOWS:
         wr = results.get(label)
         if wr is None:
             continue
@@ -105,7 +105,7 @@ def generate_html(results: Dict[str, WindowResult], top_n: int = 10,
     filepath = os.path.join(output_dir, filename)
 
     sections_html = ""
-    for label in ["3d", "7d", "14d", "21d", "30d"]:
+    for label in ORDERED_WINDOWS:
         wr = results.get(label)
         if wr is None:
             continue
@@ -226,7 +226,7 @@ def print_backtest_results(bt_results: Dict) -> None:
 
     # ── Per-strategy summary table ──
     rows = []
-    for label in ["3d", "7d", "14d", "21d", "30d"]:
+    for label in ORDERED_WINDOWS:
         s = strategies.get(label)
         if s is None:
             continue
@@ -249,7 +249,7 @@ def print_backtest_results(bt_results: Dict) -> None:
     print()
 
     # ── Trade log per strategy ──
-    for label in ["3d", "7d", "14d", "21d", "30d"]:
+    for label in ORDERED_WINDOWS:
         s = strategies.get(label)
         if s is None or not s["trades"]:
             continue
@@ -342,7 +342,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".",
 
     # Strategy summary table
     strat_rows = ""
-    for label in ["3d", "7d", "14d", "21d", "30d"]:
+    for label in ORDERED_WINDOWS:
         s = strategies.get(label)
         if s is None:
             continue
@@ -359,7 +359,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".",
 
     # Trade logs
     trade_sections = ""
-    for label in ["3d", "7d", "14d", "21d", "30d"]:
+    for label in ORDERED_WINDOWS:
         s = strategies.get(label)
         if s is None or not s["trades"]:
             continue
@@ -481,44 +481,59 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".",
 
 # ── Equity Curve Comparison SVG generator ────────────────────────────────
 
-def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 280) -> str:
+def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 320) -> str:
     """
-    Generate an inline SVG line chart comparing strategy total equity vs
-    QQQ and SPY buy-and-hold equity curves.
+    Generate an inline SVG line chart comparing all window strategy equity
+    curves plus QQQ and SPY buy-and-hold benchmarks.
     """
     total_curve = bt_results.get("total_equity_curve", [])
     benchmarks = bt_results.get("benchmarks", {})
+    strategies = bt_results.get("strategies", {})
 
     if not total_curve:
         return ""
 
-    # Collect all curves
-    curves = {"Strategy": total_curve}
-    colors = {"Strategy": "#58a6ff", "QQQ": "#3fb950", "SPY": "#f0883e"}
+    # ── Collect curves ──────────────────────────────────────────────────
+    curves = {}  # name → [(date, equity), ...]
+
+    # Benchmarks first (QQQ, SPY)
+    benchmark_colors = {"QQQ": "#3fb950", "SPY": "#f0883e"}
     for ticker in ["QQQ", "SPY"]:
         b = benchmarks.get(ticker)
         if b and b.get("equity_curve"):
             curves[ticker] = b["equity_curve"]
 
-    if len(curves) <= 1:
-        return ""  # No benchmarks to compare against
+    # Per-window strategy curves
+    window_colors = {
+        "3d":  "#58a6ff", "7d":  "#79c0ff", "14d": "#a5d6ff",
+        "21d": "#bc8cff", "30d": "#d2a8ff", "50d": "#ffa198",
+        "80d": "#ff7b72",
+    }
+    for label in ORDERED_WINDOWS:
+        s = strategies.get(label)
+        if s and s.get("equity_curve"):
+            curves[f"{label.upper()}"] = s["equity_curve"]
 
-    # Find global min/max for Y axis
+    # Combined total curve (thicker, dashed)
+    curves["Total"] = total_curve
+
+    if len(curves) <= 1:
+        return ""
+
+    # ── Y-axis range ────────────────────────────────────────────────────
     all_values = []
-    all_dates = []
     for name, curve in curves.items():
         for d, v in curve:
             all_values.append(v)
-            all_dates.append(d)
     if not all_values:
         return ""
 
-    y_min = min(all_values) * 0.92
-    y_max = max(all_values) * 1.05
+    y_min = min(all_values) * 0.90
+    y_max = max(all_values) * 1.08
     y_range = y_max - y_min or 1.0
 
-    # Layout
-    ml, mr, mt, mb = 60, 20, 16, 32
+    # ── Layout ──────────────────────────────────────────────────────────
+    ml, mr, mt, mb = 60, 20, 16, 36
     cw = width - ml - mr
     ch = height - mt - mb
 
@@ -532,11 +547,22 @@ def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 280) -> 
     def y(v: float) -> float:
         return mt + (1.0 - (v - y_min) / y_range) * ch
 
-    # Build polyline paths
+    # ── Build polylines ─────────────────────────────────────────────────
     paths = ""
     for name, curve in curves.items():
-        color = colors.get(name, "#8b949e")
-        # Resample curve to same length as total_curve (use date matching)
+        if name == "Total":
+            color = "#e1e4e8"
+            sw = "2.5"
+            dash = ' stroke-dasharray="6,3"'
+        elif name in benchmark_colors:
+            color = benchmark_colors[name]
+            sw = "2.2"
+            dash = ""
+        else:
+            color = window_colors.get(name, "#8b949e")
+            sw = "1.3"
+            dash = ""
+
         date_map = {d: v for d, v in curve}
         points = []
         for i, (d, _) in enumerate(total_curve):
@@ -546,19 +572,31 @@ def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 280) -> 
 
         if len(points) >= 2:
             polyline = " ".join(points)
-            paths += f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="2.0" stroke-linejoin="round" opacity="0.85"/>'
+            paths += (f'<polyline points="{polyline}" fill="none" stroke="{color}" '
+                      f'stroke-width="{sw}" stroke-linejoin="round"{dash} opacity="0.85"/>')
 
-    # Legend
-    legend_x = ml + 10
-    legend_y = mt + 6
+    # ── Legend (two rows: benchmarks + strategy windows) ────────────────
     legend_items = ""
-    for name in ["Strategy", "QQQ", "SPY"]:
-        if name in curves:
-            color = colors.get(name, "#8b949e")
-            legend_items += f'<rect x="{legend_x:.0f}" y="{legend_y-5:.0f}" width="12" height="4" rx="2" fill="{color}"/><text x="{legend_x+17:.0f}" y="{legend_y:.0f}" fill="#e1e4e8" font-size="11">{name}</text>'
-            legend_x += 100
+    lx, ly = ml + 10, mt + 8
 
-    # Y-axis labels (4 levels)
+    # Row 1: QQQ, SPY, Total
+    for name in ["QQQ", "SPY", "Total"]:
+        if name in curves:
+            color = benchmark_colors.get(name, "#e1e4e8")
+            legend_items += f'<rect x="{lx:.0f}" y="{ly-5:.0f}" width="14" height="4" rx="2" fill="{color}"/><text x="{lx+19:.0f}" y="{ly:.0f}" fill="#e1e4e8" font-size="10">{name}</text>'
+            lx += 72
+
+    # Row 2: Strategy windows
+    lx = ml + 10
+    ly += 16
+    for label in ORDERED_WINDOWS:
+        name = label.upper()
+        if name in curves:
+            color = window_colors.get(name, "#8b949e")
+            legend_items += f'<rect x="{lx:.0f}" y="{ly-4:.0f}" width="10" height="3" rx="1.5" fill="{color}"/><text x="{lx+14:.0f}" y="{ly:.0f}" fill="#8b949e" font-size="9">{name}</text>'
+            lx += 44
+
+    # ── Y-axis labels (4 levels) ────────────────────────────────────────
     y_labels = ""
     for i in range(4):
         frac = i / 3.0
@@ -568,24 +606,23 @@ def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 280) -> 
         if i > 0:
             y_labels += f'<line x1="{ml:.0f}" y1="{py:.1f}" x2="{ml+cw:.0f}" y2="{py:.1f}" stroke="#30363d" stroke-width="0.5" opacity="0.4"/>'
 
-    # X-axis date labels (6 evenly-spaced)
+    # ── X-axis date labels ──────────────────────────────────────────────
     x_labels = ""
     step = max(1, n_points // 6)
     for i in range(0, n_points, step):
         d = total_curve[i][0]
         date_str = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10]
-        # Show only year-month for cleaner display
         label = date_str[:7] if len(date_str) >= 7 else date_str
         x_labels += f'<text x="{x(i):.1f}" y="{height-8:.0f}" fill="#8b949e" font-size="9" text-anchor="middle">{label}</text>'
 
-    # Starting capital reference line
+    # ── Break-even reference line ───────────────────────────────────────
     initial_cap = bt_results["summary"]["initial_capital"]
     ic_y = y(initial_cap)
     ref_line = f'<line x1="{ml:.0f}" y1="{ic_y:.1f}" x2="{ml+cw:.0f}" y2="{ic_y:.1f}" stroke="#8b949e" stroke-dasharray="4,4" stroke-width="0.8" opacity="0.5"/>'
     ref_text = f'<text x="{ml+4:.0f}" y="{ic_y-4:.1f}" fill="#8b949e" font-size="8">Break-even</text>'
 
     return f"""<div class="window-section">
-<h2>Equity Curve Comparison <span class="subtitle">Strategy vs QQQ & SPY Buy & Hold</span></h2>
+<h2>Equity Curve Comparison <span class="subtitle">All Windows · QQQ · SPY</span></h2>
 <svg width="{width}" height="{height}" style="display:block;max-width:100%;background:rgba(255,255,255,0.01)">
   <rect x="{ml:.0f}" y="{mt:.0f}" width="{cw:.0f}" height="{ch:.0f}" fill="none" stroke="#30363d" stroke-width="0.5" opacity="0.5"/>
   {ref_line}

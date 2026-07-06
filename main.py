@@ -124,7 +124,7 @@ def parse_args(argv: list = None) -> argparse.Namespace:
     parser.add_argument("--html", action="store_true")
     parser.add_argument("--output-dir", "-o", type=str, default="results")
     parser.add_argument("--max-window", "-w", type=int, default=30,
-                        choices=[3, 7, 14, 21, 30])
+                        choices=[3, 7, 14, 21, 30, 50, 80])
     # Backtest
     parser.add_argument("--backtest", "-b", action="store_true")
     parser.add_argument("--bt-days", type=int, default=60)
@@ -203,7 +203,7 @@ def main() -> None:
     _auto_detect_proxy()
 
     from stock_selector.fetcher import fetch_historical_data
-    from stock_selector.screener import compute_rankings, WINDOWS
+    from stock_selector.screener import compute_rankings, ORDERED_WINDOWS, WINDOWS
     from stock_selector.display import (
         print_rankings, export_csv, generate_html,
         print_backtest_results, print_backtest_html,

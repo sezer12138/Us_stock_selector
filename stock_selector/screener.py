@@ -20,7 +20,12 @@ WINDOWS: Dict[str, int] = {
     "14d": 14,
     "21d": 21,
     "30d": 30,
+    "50d": 50,
+    "80d": 80,
 }
+
+# Ordered list for consistent display order
+ORDERED_WINDOWS = ["3d", "7d", "14d", "21d", "30d", "50d", "80d"]
 
 
 @dataclass

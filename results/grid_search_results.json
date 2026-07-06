@@ -1,0 +1,774 @@
+{
+  "baseline": {
+    "universe": "nasdaq100",
+    "bt_days": 365,
+    "bt_capital": 50000,
+    "bt_tp": 50,
+    "bt_sl": 20,
+    "bt_position_pct": 100,
+    "bt_min_vol": 10,
+    "bt_max_hold": 100,
+    "bt_exec": "intraday"
+  },
+  "results": {
+    "bt_tp": [
+      {
+        "param": "bt_tp",
+        "value": 5,
+        "slug": "tp5",
+        "total_return_pct": 59.73,
+        "final_equity": 79862.93,
+        "total_trades": 150,
+        "win_rate_pct": 86.0,
+        "strategy_returns": {
+          "3d": 60.73,
+          "7d": -19.24,
+          "14d": 148.3,
+          "21d": 59.71,
+          "30d": 49.13
+        },
+        "elapsed_sec": 9.1
+      },
+      {
+        "param": "bt_tp",
+        "value": 10,
+        "slug": "tp10",
+        "total_return_pct": 52.42,
+        "final_equity": 76209.42,
+        "total_trades": 86,
+        "win_rate_pct": 75.58,
+        "strategy_returns": {
+          "3d": 17.07,
+          "7d": 9.41,
+          "14d": 114.34,
+          "21d": 62.72,
+          "30d": 58.55
+        },
+        "elapsed_sec": 7.3
+      },
+      {
+        "param": "bt_tp",
+        "value": 15,
+        "slug": "tp15",
+        "total_return_pct": -7.27,
+        "final_equity": 46365.54,
+        "total_trades": 58,
+        "win_rate_pct": 56.9,
+        "strategy_returns": {
+          "3d": 3.32,
+          "7d": -37.8,
+          "14d": -29.39,
+          "21d": 52.45,
+          "30d": -24.92
+        },
+        "elapsed_sec": 6.6
+      },
+      {
+        "param": "bt_tp",
+        "value": 20,
+        "slug": "tp20",
+        "total_return_pct": 10.65,
+        "final_equity": 55324.99,
+        "total_trades": 41,
+        "win_rate_pct": 53.66,
+        "strategy_returns": {
+          "3d": -19.46,
+          "7d": -37.8,
+          "14d": 58.61,
+          "21d": 93.43,
+          "30d": -41.52
+        },
+        "elapsed_sec": 6.0
+      },
+      {
+        "param": "bt_tp",
+        "value": 25,
+        "slug": "tp25",
+        "total_return_pct": 113.09,
+        "final_equity": 106542.76,
+        "total_trades": 38,
+        "win_rate_pct": 65.79,
+        "strategy_returns": {
+          "3d": 0.87,
+          "7d": -37.8,
+          "14d": 144.29,
+          "21d": 319.49,
+          "30d": 138.58
+        },
+        "elapsed_sec": 6.0
+      },
+      {
+        "param": "bt_tp",
+        "value": 30,
+        "slug": "tp30",
+        "total_return_pct": 139.46,
+        "final_equity": 119730.57,
+        "total_trades": 37,
+        "win_rate_pct": 67.57,
+        "strategy_returns": {
+          "3d": 4.43,
+          "7d": -37.8,
+          "14d": 121.01,
+          "21d": 423.43,
+          "30d": 186.24
+        },
+        "elapsed_sec": 5.9
+      },
+      {
+        "param": "bt_tp",
+        "value": 35,
+        "slug": "tp35",
+        "total_return_pct": 85.97,
+        "final_equity": 92985.68,
+        "total_trades": 32,
+        "win_rate_pct": 53.12,
+        "strategy_returns": {
+          "3d": -47.56,
+          "7d": -37.8,
+          "14d": 157.02,
+          "21d": 344.22,
+          "30d": 13.98
+        },
+        "elapsed_sec": 5.8
+      },
+      {
+        "param": "bt_tp",
+        "value": 40,
+        "slug": "tp40",
+        "total_return_pct": 89.57,
+        "final_equity": 94786.94,
+        "total_trades": 30,
+        "win_rate_pct": 56.67,
+        "strategy_returns": {
+          "3d": -35.18,
+          "7d": -37.8,
+          "14d": 174.57,
+          "21d": 345.7,
+          "30d": 0.59
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_tp",
+        "value": 45,
+        "slug": "tp45",
+        "total_return_pct": 79.38,
+        "final_equity": 89690.47,
+        "total_trades": 29,
+        "win_rate_pct": 58.62,
+        "strategy_returns": {
+          "3d": -32.87,
+          "7d": -37.8,
+          "14d": 165.1,
+          "21d": 298.3,
+          "30d": 4.18
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_tp",
+        "value": 50,
+        "slug": "tp50",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_tp",
+        "value": 60,
+        "slug": "tp60",
+        "total_return_pct": 93.47,
+        "final_equity": 96736.73,
+        "total_trades": 30,
+        "win_rate_pct": 50.0,
+        "strategy_returns": {
+          "3d": 2.13,
+          "7d": -37.8,
+          "14d": 98.1,
+          "21d": 273.61,
+          "30d": 131.33
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_tp",
+        "value": 70,
+        "slug": "tp70",
+        "total_return_pct": 128.88,
+        "final_equity": 114437.5,
+        "total_trades": 28,
+        "win_rate_pct": 46.43,
+        "strategy_returns": {
+          "3d": -21.7,
+          "7d": -37.8,
+          "14d": 123.63,
+          "21d": 330.64,
+          "30d": 249.61
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_tp",
+        "value": 80,
+        "slug": "tp80",
+        "total_return_pct": 141.85,
+        "final_equity": 120922.67,
+        "total_trades": 26,
+        "win_rate_pct": 53.85,
+        "strategy_returns": {
+          "3d": -17.09,
+          "7d": -37.8,
+          "14d": 150.72,
+          "21d": 366.25,
+          "30d": 247.16
+        },
+        "elapsed_sec": 5.6
+      }
+    ],
+    "bt_sl": [
+      {
+        "param": "bt_sl",
+        "value": 5,
+        "slug": "sl5",
+        "total_return_pct": 103.06,
+        "final_equity": 101530.44,
+        "total_trades": 73,
+        "win_rate_pct": 23.29,
+        "strategy_returns": {
+          "3d": 3.3,
+          "7d": 139.79,
+          "14d": 266.82,
+          "21d": 79.98,
+          "30d": 25.42
+        },
+        "elapsed_sec": 7.0
+      },
+      {
+        "param": "bt_sl",
+        "value": 8,
+        "slug": "sl8",
+        "total_return_pct": 142.59,
+        "final_equity": 121295.84,
+        "total_trades": 51,
+        "win_rate_pct": 39.22,
+        "strategy_returns": {
+          "3d": 249.02,
+          "7d": 202.41,
+          "14d": 235.26,
+          "21d": 36.43,
+          "30d": -10.16
+        },
+        "elapsed_sec": 6.4
+      },
+      {
+        "param": "bt_sl",
+        "value": 10,
+        "slug": "sl10",
+        "total_return_pct": 21.15,
+        "final_equity": 60575.76,
+        "total_trades": 46,
+        "win_rate_pct": 34.78,
+        "strategy_returns": {
+          "3d": 1.33,
+          "7d": -30.09,
+          "14d": 118.58,
+          "21d": 29.59,
+          "30d": -13.64
+        },
+        "elapsed_sec": 6.2
+      },
+      {
+        "param": "bt_sl",
+        "value": 12,
+        "slug": "sl12",
+        "total_return_pct": 54.56,
+        "final_equity": 77279.75,
+        "total_trades": 40,
+        "win_rate_pct": 42.5,
+        "strategy_returns": {
+          "3d": 15.1,
+          "7d": 168.5,
+          "14d": 48.94,
+          "21d": 56.59,
+          "30d": -16.34
+        },
+        "elapsed_sec": 6.0
+      },
+      {
+        "param": "bt_sl",
+        "value": 15,
+        "slug": "sl15",
+        "total_return_pct": 37.56,
+        "final_equity": 68779.96,
+        "total_trades": 32,
+        "win_rate_pct": 46.88,
+        "strategy_returns": {
+          "3d": 11.18,
+          "7d": -56.6,
+          "14d": 153.53,
+          "21d": 99.75,
+          "30d": -20.07
+        },
+        "elapsed_sec": 5.8
+      },
+      {
+        "param": "bt_sl",
+        "value": 18,
+        "slug": "sl18",
+        "total_return_pct": 76.79,
+        "final_equity": 88394.88,
+        "total_trades": 28,
+        "win_rate_pct": 42.86,
+        "strategy_returns": {
+          "3d": -60.37,
+          "7d": -43.21,
+          "14d": 153.53,
+          "21d": 363.22,
+          "30d": -29.22
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_sl",
+        "value": 20,
+        "slug": "sl20",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_sl",
+        "value": 25,
+        "slug": "sl25",
+        "total_return_pct": 77.35,
+        "final_equity": 88674.36,
+        "total_trades": 25,
+        "win_rate_pct": 48.0,
+        "strategy_returns": {
+          "3d": -12.79,
+          "7d": -49.48,
+          "14d": 153.53,
+          "21d": 309.28,
+          "30d": -13.8
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_sl",
+        "value": 30,
+        "slug": "sl30",
+        "total_return_pct": 119.11,
+        "final_equity": 109554.07,
+        "total_trades": 27,
+        "win_rate_pct": 55.56,
+        "strategy_returns": {
+          "3d": -4.3,
+          "7d": -38.76,
+          "14d": 153.53,
+          "21d": 309.28,
+          "30d": 175.78
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_sl",
+        "value": 40,
+        "slug": "sl40",
+        "total_return_pct": 134.54,
+        "final_equity": 117271.19,
+        "total_trades": 25,
+        "win_rate_pct": 64.0,
+        "strategy_returns": {
+          "3d": 34.06,
+          "7d": 0.06,
+          "14d": 153.53,
+          "21d": 309.28,
+          "30d": 175.78
+        },
+        "elapsed_sec": 5.6
+      }
+    ],
+    "bt_position_pct": [
+      {
+        "param": "bt_position_pct",
+        "value": 10,
+        "slug": "pos10",
+        "total_return_pct": 5.9,
+        "final_equity": 52949.69,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -0.29,
+          "7d": -4.05,
+          "14d": 11.78,
+          "21d": 19.85,
+          "30d": 2.21
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_position_pct",
+        "value": 25,
+        "slug": "pos25",
+        "total_return_pct": 15.84,
+        "final_equity": 57919.93,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -1.32,
+          "7d": -10.03,
+          "14d": 30.89,
+          "21d": 54.75,
+          "30d": 4.92
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_position_pct",
+        "value": 50,
+        "slug": "pos50",
+        "total_return_pct": 35.69,
+        "final_equity": 67844.93,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -4.44,
+          "7d": -19.71,
+          "14d": 66.68,
+          "21d": 128.09,
+          "30d": 7.84
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_position_pct",
+        "value": 75,
+        "slug": "pos75",
+        "total_return_pct": 60.2,
+        "final_equity": 80101.58,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -9.03,
+          "7d": -28.99,
+          "14d": 107.53,
+          "21d": 222.74,
+          "30d": 8.77
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_position_pct",
+        "value": 100,
+        "slug": "pos100",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.7
+      }
+    ],
+    "bt_min_vol": [
+      {
+        "param": "bt_min_vol",
+        "value": 0,
+        "slug": "vol0",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_min_vol",
+        "value": 5,
+        "slug": "vol5",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_min_vol",
+        "value": 10,
+        "slug": "vol10",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_min_vol",
+        "value": 25,
+        "slug": "vol25",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_min_vol",
+        "value": 50,
+        "slug": "vol50",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.6
+      },
+      {
+        "param": "bt_min_vol",
+        "value": 100,
+        "slug": "vol100",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.7
+      }
+    ],
+    "bt_max_hold": [
+      {
+        "param": "bt_max_hold",
+        "value": 5,
+        "slug": "hold5",
+        "total_return_pct": 24.8,
+        "final_equity": 62400.19,
+        "total_trades": 266,
+        "win_rate_pct": 54.51,
+        "strategy_returns": {
+          "3d": 9.95,
+          "7d": 25.66,
+          "14d": 80.05,
+          "21d": -8.01,
+          "30d": 16.35
+        },
+        "elapsed_sec": 12.4
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 10,
+        "slug": "hold10",
+        "total_return_pct": 57.85,
+        "final_equity": 78925.38,
+        "total_trades": 154,
+        "win_rate_pct": 50.65,
+        "strategy_returns": {
+          "3d": 21.17,
+          "7d": -14.07,
+          "14d": 137.91,
+          "21d": 164.15,
+          "30d": -19.9
+        },
+        "elapsed_sec": 9.2
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 15,
+        "slug": "hold15",
+        "total_return_pct": 74.58,
+        "final_equity": 87287.91,
+        "total_trades": 112,
+        "win_rate_pct": 54.46,
+        "strategy_returns": {
+          "3d": 73.81,
+          "7d": -0.77,
+          "14d": 92.28,
+          "21d": 157.89,
+          "30d": 49.66
+        },
+        "elapsed_sec": 8.1
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 20,
+        "slug": "hold20",
+        "total_return_pct": 74.54,
+        "final_equity": 87270.63,
+        "total_trades": 92,
+        "win_rate_pct": 52.17,
+        "strategy_returns": {
+          "3d": 148.91,
+          "7d": -1.21,
+          "14d": 72.26,
+          "21d": 119.54,
+          "30d": 33.22
+        },
+        "elapsed_sec": 7.5
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 30,
+        "slug": "hold30",
+        "total_return_pct": 42.82,
+        "final_equity": 71411.9,
+        "total_trades": 65,
+        "win_rate_pct": 50.77,
+        "strategy_returns": {
+          "3d": 5.38,
+          "7d": 71.52,
+          "14d": 21.56,
+          "21d": 66.96,
+          "30d": 48.7
+        },
+        "elapsed_sec": 6.7
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 50,
+        "slug": "hold50",
+        "total_return_pct": 73.42,
+        "final_equity": 86710.04,
+        "total_trades": 44,
+        "win_rate_pct": 47.73,
+        "strategy_returns": {
+          "3d": 77.55,
+          "7d": 63.7,
+          "14d": 27.87,
+          "21d": 59.66,
+          "30d": 138.33
+        },
+        "elapsed_sec": 9.4
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 75,
+        "slug": "hold75",
+        "total_return_pct": 77.93,
+        "final_equity": 88962.91,
+        "total_trades": 33,
+        "win_rate_pct": 60.61,
+        "strategy_returns": {
+          "3d": 30.75,
+          "7d": 82.12,
+          "14d": 142.62,
+          "21d": 95.89,
+          "30d": 38.25
+        },
+        "elapsed_sec": 5.9
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 100,
+        "slug": "hold100",
+        "total_return_pct": 89.93,
+        "final_equity": 94964.35,
+        "total_trades": 28,
+        "win_rate_pct": 57.14,
+        "strategy_returns": {
+          "3d": -14.8,
+          "7d": -37.8,
+          "14d": 153.53,
+          "21d": 340.94,
+          "30d": 7.78
+        },
+        "elapsed_sec": 5.8
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 150,
+        "slug": "hold150",
+        "total_return_pct": 62.03,
+        "final_equity": 81017.12,
+        "total_trades": 25,
+        "win_rate_pct": 52.0,
+        "strategy_returns": {
+          "3d": 38.94,
+          "7d": 138.3,
+          "14d": -8.96,
+          "21d": 138.28,
+          "30d": 3.61
+        },
+        "elapsed_sec": 5.7
+      },
+      {
+        "param": "bt_max_hold",
+        "value": 0,
+        "slug": "hold0",
+        "total_return_pct": 57.61,
+        "final_equity": 78803.81,
+        "total_trades": 11,
+        "win_rate_pct": 63.64,
+        "strategy_returns": {
+          "3d": -10.43,
+          "7d": -3.06,
+          "14d": -12.92,
+          "21d": 324.88,
+          "30d": -10.43
+        },
+        "elapsed_sec": 6.0
+      }
+    ]
+  },
+  "generated_at": "2026-07-06T13:43:29.289025"
+}

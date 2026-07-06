@@ -123,7 +123,7 @@ def parse_args(argv: list = None) -> argparse.Namespace:
     parser.add_argument("--export", "-e", action="store_true")
     parser.add_argument("--html", action="store_true")
     parser.add_argument("--output-dir", "-o", type=str, default="results")
-    parser.add_argument("--max-window", "-w", type=int, default=30,
+    parser.add_argument("--max-window", "-w", type=int, default=80,
                         choices=[3, 7, 14, 21, 30, 50, 80])
     # Backtest
     parser.add_argument("--backtest", "-b", action="store_true")

@@ -481,7 +481,7 @@ def print_backtest_html(bt_results: Dict, output_dir: str = ".",
 
 # ── Equity Curve Comparison SVG generator ────────────────────────────────
 
-def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 320) -> str:
+def _equity_curve_svg(bt_results: Dict, width: int = 1200, height: int = 420) -> str:
     """
     Generate an inline SVG line chart comparing all window strategy equity
     curves plus QQQ and SPY buy-and-hold benchmarks.
@@ -496,25 +496,29 @@ def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 320) -> 
     # ── Collect curves ──────────────────────────────────────────────────
     curves = {}  # name → [(date, equity), ...]
 
-    # Benchmarks first (QQQ, SPY)
+    # Benchmarks first (QQQ, SPY) — thick prominent lines
     benchmark_colors = {"QQQ": "#3fb950", "SPY": "#f0883e"}
     for ticker in ["QQQ", "SPY"]:
         b = benchmarks.get(ticker)
         if b and b.get("equity_curve"):
             curves[ticker] = b["equity_curve"]
 
-    # Per-window strategy curves
+    # Per-window strategy curves — categorically distinct palette
     window_colors = {
-        "3d":  "#58a6ff", "7d":  "#79c0ff", "14d": "#a5d6ff",
-        "21d": "#bc8cff", "30d": "#d2a8ff", "50d": "#ffa198",
-        "80d": "#ff7b72",
+        "3d":  "#58a6ff",  # blue
+        "7d":  "#f0c040",  # gold
+        "14d": "#3fb950",  # green
+        "21d": "#ff7b72",  # coral/red
+        "30d": "#bc8cff",  # purple
+        "50d": "#39d2c0",  # teal
+        "80d": "#f0883e",  # orange
     }
     for label in ORDERED_WINDOWS:
         s = strategies.get(label)
         if s and s.get("equity_curve"):
             curves[f"{label.upper()}"] = s["equity_curve"]
 
-    # Combined total curve (thicker, dashed)
+    # Combined total curve (thicker, dashed white)
     curves["Total"] = total_curve
 
     if len(curves) <= 1:
@@ -533,7 +537,7 @@ def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 320) -> 
     y_range = y_max - y_min or 1.0
 
     # ── Layout ──────────────────────────────────────────────────────────
-    ml, mr, mt, mb = 60, 20, 16, 36
+    ml, mr, mt, mb = 72, 24, 20, 44
     cw = width - ml - mr
     ch = height - mt - mb
 
@@ -552,15 +556,15 @@ def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 320) -> 
     for name, curve in curves.items():
         if name == "Total":
             color = "#e1e4e8"
-            sw = "2.5"
-            dash = ' stroke-dasharray="6,3"'
+            sw = "3.0"
+            dash = ' stroke-dasharray="8,4"'
         elif name in benchmark_colors:
             color = benchmark_colors[name]
-            sw = "2.2"
+            sw = "2.8"
             dash = ""
         else:
-            color = window_colors.get(name, "#8b949e")
-            sw = "1.3"
+            color = window_colors.get(name.lower(), "#8b949e")
+            sw = "1.8"
             dash = ""
 
         date_map = {d: v for d, v in curve}
@@ -577,49 +581,49 @@ def _equity_curve_svg(bt_results: Dict, width: int = 800, height: int = 320) -> 
 
     # ── Legend (two rows: benchmarks + strategy windows) ────────────────
     legend_items = ""
-    lx, ly = ml + 10, mt + 8
+    lx, ly = ml + 12, mt + 10
 
-    # Row 1: QQQ, SPY, Total
+    # Row 1: QQQ, SPY, Total — larger, prominent
     for name in ["QQQ", "SPY", "Total"]:
         if name in curves:
             color = benchmark_colors.get(name, "#e1e4e8")
-            legend_items += f'<rect x="{lx:.0f}" y="{ly-5:.0f}" width="14" height="4" rx="2" fill="{color}"/><text x="{lx+19:.0f}" y="{ly:.0f}" fill="#e1e4e8" font-size="10">{name}</text>'
-            lx += 72
+            legend_items += f'<rect x="{lx:.0f}" y="{ly-6:.0f}" width="18" height="5" rx="2.5" fill="{color}"/><text x="{lx+24:.0f}" y="{ly:.0f}" fill="#e1e4e8" font-size="12">{name}</text>'
+            lx += 90
 
-    # Row 2: Strategy windows
-    lx = ml + 10
-    ly += 16
+    # Row 2: Strategy windows — distinct colors, readable
+    lx = ml + 12
+    ly += 20
     for label in ORDERED_WINDOWS:
         name = label.upper()
         if name in curves:
-            color = window_colors.get(name, "#8b949e")
-            legend_items += f'<rect x="{lx:.0f}" y="{ly-4:.0f}" width="10" height="3" rx="1.5" fill="{color}"/><text x="{lx+14:.0f}" y="{ly:.0f}" fill="#8b949e" font-size="9">{name}</text>'
-            lx += 44
+            color = window_colors.get(name.lower(), "#8b949e")
+            legend_items += f'<rect x="{lx:.0f}" y="{ly-5:.0f}" width="14" height="4" rx="2" fill="{color}"/><text x="{lx+18:.0f}" y="{ly:.0f}" fill="#c0c6ce" font-size="11">{name}</text>'
+            lx += 52
 
-    # ── Y-axis labels (4 levels) ────────────────────────────────────────
+    # ── Y-axis labels (5 levels for more granularity) ───────────────────
     y_labels = ""
-    for i in range(4):
-        frac = i / 3.0
+    for i in range(5):
+        frac = i / 4.0
         val = y_min + frac * y_range
         py = y(val)
-        y_labels += f'<text x="{ml-6:.0f}" y="{py+4:.1f}" fill="#8b949e" font-size="9" text-anchor="end">${val/1000:.0f}k</text>'
+        y_labels += f'<text x="{ml-8:.0f}" y="{py+5:.1f}" fill="#8b949e" font-size="11" text-anchor="end">${val/1000:.0f}k</text>'
         if i > 0:
             y_labels += f'<line x1="{ml:.0f}" y1="{py:.1f}" x2="{ml+cw:.0f}" y2="{py:.1f}" stroke="#30363d" stroke-width="0.5" opacity="0.4"/>'
 
-    # ── X-axis date labels ──────────────────────────────────────────────
+    # ── X-axis date labels (8 evenly-spaced) ────────────────────────────
     x_labels = ""
-    step = max(1, n_points // 6)
+    step = max(1, n_points // 8)
     for i in range(0, n_points, step):
         d = total_curve[i][0]
         date_str = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10]
         label = date_str[:7] if len(date_str) >= 7 else date_str
-        x_labels += f'<text x="{x(i):.1f}" y="{height-8:.0f}" fill="#8b949e" font-size="9" text-anchor="middle">{label}</text>'
+        x_labels += f'<text x="{x(i):.1f}" y="{height-10:.0f}" fill="#8b949e" font-size="11" text-anchor="middle">{label}</text>'
 
     # ── Break-even reference line ───────────────────────────────────────
     initial_cap = bt_results["summary"]["initial_capital"]
     ic_y = y(initial_cap)
-    ref_line = f'<line x1="{ml:.0f}" y1="{ic_y:.1f}" x2="{ml+cw:.0f}" y2="{ic_y:.1f}" stroke="#8b949e" stroke-dasharray="4,4" stroke-width="0.8" opacity="0.5"/>'
-    ref_text = f'<text x="{ml+4:.0f}" y="{ic_y-4:.1f}" fill="#8b949e" font-size="8">Break-even</text>'
+    ref_line = f'<line x1="{ml:.0f}" y1="{ic_y:.1f}" x2="{ml+cw:.0f}" y2="{ic_y:.1f}" stroke="#8b949e" stroke-dasharray="6,4" stroke-width="1.0" opacity="0.5"/>'
+    ref_text = f'<text x="{ml+6:.0f}" y="{ic_y-5:.1f}" fill="#8b949e" font-size="10">Break-even</text>'
 
     return f"""<div class="window-section">
 <h2>Equity Curve Comparison <span class="subtitle">All Windows · QQQ · SPY</span></h2>

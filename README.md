@@ -159,6 +159,54 @@ python main.py --tickers AAPL,MSFT,NVDA,TSLA --backtest --bt-days 30 --bt-capita
 python main.py --backtest --html
 ```
 
+## Grid Search (Hyperparameter Optimization)
+
+`python grid_search.py` sweeps each of 5 hyperparameters independently over a
+range of values, running a full 365-day momentum backtest for each value to
+find the optimal settings for your backtest configuration.
+
+### What It Does
+
+Starting from the `config/aggressive.json` baseline, the script:
+
+1. **Downloads** ~1 year of daily OHLCV data for the NASDAQ-100 universe
+   (fetched once, cached to `results/_grid_search_data.csv`)
+2. **Sweeps** each parameter over its range while keeping all other parameters
+   at their baseline values (1D grid search)
+3. **Generates** a return-vs-value chart per parameter (`results/chart_*.png`)
+4. **Outputs** a markdown report (`results/grid_search_report.md`) and a JSON
+   results file (`results/grid_search_results.json`)
+5. **Recommends** an optimized config combining each parameter's best value,
+   saved to `config/optimized.json`
+6. **Validates** by running the baseline and optimized configs side-by-side
+
+### Parameters Swept
+
+| Parameter | Flag | Range Tested | Baseline |
+|-----------|------|-------------|----------|
+| Take-Profit | `bt_tp` | 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80 | 50 |
+| Stop-Loss | `bt_sl` | 5, 8, 10, 12, 15, 18, 20, 25, 30, 40 | 20 |
+| Position Size | `bt_position_pct` | 10, 25, 50, 75, 100 | 100 |
+| Min Volume ($M) | `bt_min_vol` | 0, 5, 10, 25, 50, 100 | 10 |
+| Max Hold Days | `bt_max_hold` | 5, 10, 15, 20, 30, 50, 75, 100, 150, 0 | 100 |
+
+### How to Run
+
+```bash
+python grid_search.py
+```
+
+The script has no command-line arguments. To test different parameter ranges or
+a different baseline, edit the `CONFIG` object inside `grid_search.py`.
+
+### Output
+
+- `config/optimized.json` — recommended config combining each parameter's best value
+- `results/chart_*.png` — per-parameter return-vs-value line charts (dark theme)
+- `results/grid_search_results.json` — full results in machine-readable format
+- `results/grid_search_report.md` — human-readable markdown report with summary tables
+- Terminal output — summary table comparing baseline vs optimized performance
+
 ## Project Structure
 
 ```

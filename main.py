@@ -18,33 +18,8 @@ Usage:
 import argparse
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime
-
-
-# ── Proxy detection ────────────────────────────────────────────────────────
-
-def _auto_detect_proxy() -> None:
-    """Detect macOS system proxy and set env vars for yfinance/curl_cffi."""
-    if os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"):
-        return
-    try:
-        result = subprocess.run(
-            ["scutil", "--proxy"], capture_output=True, text=True, timeout=5,
-        )
-        proxy_host = proxy_port = None
-        for line in result.stdout.splitlines():
-            if "HTTPProxy" in line and "HTTPEnable" not in line:
-                proxy_host = line.split(":")[-1].strip()
-            if "HTTPPort" in line:
-                proxy_port = line.split(":")[-1].strip()
-        if proxy_host and proxy_port:
-            proxy_url = f"http://{proxy_host}:{proxy_port}"
-            for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-                os.environ[var] = proxy_url
-    except Exception:
-        pass
 
 
 # ── Config file support ────────────────────────────────────────────────────
@@ -200,7 +175,8 @@ def _report_basename(args: argparse.Namespace) -> str:
 # ── Main ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    _auto_detect_proxy()
+    from stock_selector.fetcher import auto_detect_proxy
+    auto_detect_proxy()
 
     from stock_selector.fetcher import fetch_historical_data
     from stock_selector.screener import compute_rankings, ORDERED_WINDOWS, WINDOWS

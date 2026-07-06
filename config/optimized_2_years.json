@@ -1,0 +1,14 @@
+{
+    "_description": "OPTIMIZED: TP=80/SL=40 — Best from cross-combination grid search. +172% return, 63.6% win rate",
+    "universe": "nasdaq100",
+    "backtest": true,
+    "bt_days": 730,
+    "bt_capital": 50000,
+    "bt_tp": 80,
+    "bt_sl": 40,
+    "bt_position_pct": 100,
+    "bt_min_vol": 0,
+    "bt_max_hold": 100,
+    "bt_exec": "intraday",
+    "html": true
+}

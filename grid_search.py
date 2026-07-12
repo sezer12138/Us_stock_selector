@@ -52,13 +52,13 @@ _OUTPUT_DIR = os.path.join(PROJ_ROOT, "results")
 
 CONFIG = GridSearchConfig(
     baseline={
-        "universe": "both",
-        "bt_days": 365,
+        "universe": "nasdaq100",
+        "bt_days": 7300,
         "bt_capital": 50000,
-        "bt_tp": 50,
-        "bt_sl": 20,
+        "bt_tp": 80,
+        "bt_sl": 40,
         "bt_position_pct": 100,
-        "bt_min_vol": 10,
+        "bt_min_vol": 0,
         "bt_max_hold": 100,
         "bt_exec": "intraday",
     },
@@ -238,9 +238,9 @@ def _load_or_fetch_data(config: GridSearchConfig) -> pd.DataFrame:
         print(f"  Loaded {len(df)} rows, {df['Ticker'].nunique()} tickers")
         return df
 
-    UNIVERSE = "nasdaq100"
-    tickers = get_tickers(UNIVERSE)
-    print(f"  Universe: {UNIVERSE.upper()} ({len(tickers)} tickers)")
+    universe = config.baseline.get("universe", "nasdaq100")
+    tickers = get_tickers(universe)
+    print(f"  Universe: {universe.upper()} ({len(tickers)} tickers)")
     lookback = 30 + config.baseline["bt_days"] + 20  # max_window + bt_days + buffer
     print(f"  Lookback: {lookback} calendar days")
     print(f"  Downloading via v8 chart API (~{len(tickers) * 0.5:.0f}s)...")
